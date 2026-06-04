@@ -14,6 +14,7 @@ import {
   mapBacklink,
   mapReferringDomain,
   mapAnchorText,
+  isGarbageKeyword,
 } from '@/lib/map-rows';
 import type { ReportType, UploadRecord, DedupeReport } from '@/lib/types';
 
@@ -99,7 +100,9 @@ function commitToStore(
     next.dedupeReports = [...next.dedupeReports, dedupeReport];
 
     if (reportType === 'keyword' || reportType === 'organic_positions') {
-      next.keywords = [...next.keywords, ...cleaned.map((r) => mapKeyword(r, uploadId))];
+      const mapped = cleaned.map((r) => mapKeyword(r, uploadId));
+      // Filter out garbage rows from mixed-format exports (e.g. SEMrush SERP overview)
+      next.keywords = [...next.keywords, ...mapped.filter((k) => !isGarbageKeyword(k.keyword))];
     } else if (reportType === 'keyword_gap') {
       next.keywordGaps = [...next.keywordGaps, ...cleaned.map((r) => mapKeywordGap(r, uploadId))];
     } else if (reportType === 'competitor_pages') {
@@ -259,6 +262,12 @@ export default function UploadPage() {
           Drop CSV exports from SEMrush, Ahrefs, Moz, or any SEO tool. Report type is auto-detected
           from filename and column headers. Unknown files stay pending until you select the type.
         </p>
+      </div>
+
+      <div style={{ margin: '1rem 0', padding: '0.75rem 1rem', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)', borderRadius: '8px', fontSize: '0.82rem', color: 'var(--muted)', lineHeight: 1.6 }}>
+        <strong style={{ color: 'var(--accent)' }}>Tip:</strong> If files were previously imported with the wrong type detected (e.g. numbers showing as keywords), go to{' '}
+        <a href="/settings" style={{ color: 'var(--accent)' }}>Settings → Clear All Data</a>, then re-upload here.
+        Competitor top pages, keyword, organic position, backlink, and gap reports are now all auto-detected from column headers.
       </div>
 
       <UploadZone onFiles={processFiles} loading={loading} />
