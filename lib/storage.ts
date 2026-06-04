@@ -44,3 +44,18 @@ export function clearStore(): void {
   if (typeof window === 'undefined') return;
   localStorage.removeItem(STORAGE_KEY);
 }
+
+/** Remove all data associated with a single upload ID. */
+export function removeUpload(uploadId: string): void {
+  updateStore((store) => ({
+    ...store,
+    uploads: store.uploads.filter((u) => u.id !== uploadId),
+    keywords: store.keywords.filter((r) => r.uploadId !== uploadId),
+    keywordGaps: store.keywordGaps.filter((r) => r.uploadId !== uploadId),
+    competitorPages: store.competitorPages.filter((r) => r.uploadId !== uploadId),
+    backlinks: store.backlinks.filter((r) => r.uploadId !== uploadId),
+    referringDomains: store.referringDomains.filter((r) => r.uploadId !== uploadId),
+    anchorTexts: store.anchorTexts.filter((r) => r.uploadId !== uploadId),
+    dedupeReports: store.dedupeReports.filter((r) => r.uploadId !== uploadId),
+  }));
+}
