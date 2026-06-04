@@ -1,0 +1,127 @@
+import type { KeywordRecord, BacklinkRecord, CompetitorPageRecord } from './types';
+
+function toCSV(rows: Record<string, unknown>[]): string {
+  if (rows.length === 0) return '';
+  const headers = Object.keys(rows[0]);
+  const lines = [
+    headers.join(','),
+    ...rows.map((r) =>
+      headers.map((h) => {
+        const v = String(r[h] ?? '');
+        return v.includes(',') || v.includes('"') || v.includes('\n')
+          ? `"${v.replace(/"/g, '""')}"`
+          : v;
+      }).join(',')
+    ),
+  ];
+  return lines.join('\n');
+}
+
+function download(content: string, filename: string, mime = 'text/csv') {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export function exportKeywordsCSV(rows: KeywordRecord[]): void {
+  const data = rows.map((r) => ({
+    Keyword: r.keyword,
+    Volume: r.volume ?? '',
+    Difficulty: r.difficulty ?? '',
+    CPC: r.cpc ?? '',
+    Intent: r.intent ?? '',
+    Tag: r.tag ?? '',
+    'Opportunity Score': r.opportunityScore ?? '',
+  }));
+  download(toCSV(data), 'serpvault-keywords.csv');
+}
+
+export function exportBacklinksCSV(rows: BacklinkRecord[]): void {
+  const data = rows.map((r) => ({
+    'Source URL': r.sourceUrl,
+    'Target URL': r.targetUrl,
+    'Anchor Text': r.anchorText ?? '',
+    DA: r.domainAuthority ?? '',
+    DR: r.domainRating ?? '',
+    Tag: r.tag ?? '',
+    'Opportunity Score': r.opportunityScore ?? '',
+  }));
+  download(toCSV(data), 'serpvault-backlinks.csv');
+}
+
+export function exportContentPlanCSV(rows: KeywordRecord[]): void {
+  const tagged = rows.filter((r) => r.tag && r.tag !== 'Ignore');
+  const data = tagged.map((r) => ({
+    Keyword: r.keyword,
+    'Content Type': r.tag ?? '',
+    Volume: r.volume ?? '',
+    Difficulty: r.difficulty ?? '',
+    Intent: r.intent ?? '',
+    'Opportunity Score': r.opportunityScore ?? '',
+    'Target URL': r.url ?? '',
+  }));
+  download(toCSV(data), 'serpvault-content-plan.csv');
+}
+
+export function exportBacklinkTargetsCSV(rows: BacklinkRecord[]): void {
+  const tagged = rows.filter((r) => r.tag === 'Backlink Target');
+  const data = tagged.map((r) => ({
+    'Source URL': r.sourceUrl,
+    'Anchor Text': r.anchorText ?? '',
+    DA: r.domainAuthority ?? '',
+    'Opportunity Score': r.opportunityScore ?? '',
+  }));
+  download(toCSV(data), 'serpvault-backlink-targets.csv');
+}
+
+export function exportActionPlanMD(
+  keywords: KeywordRecord[],
+  backlinks: BacklinkRecord[],
+  competitors: CompetitorPageRecord[]
+): void {
+  const date = new Date().toLocaleDateString();
+  const topKw = [...keywords]
+    .sort((a, b) => (b.opportunityScore ?? 0) - (a.opportunityScore ?? 0))
+    .slice(0, 20);
+  const topBl = [...backlinks]
+    .filter((r) => r.tag === 'Backlink Target')
+    .sort((a, b) => (b.opportunityScore ?? 0) - (a.opportunityScore ?? 0))
+    .slice(0, 10);
+  const topComp = [...competitors]
+    .sort((a, b) => (b.traffic ?? 0) - (a.traffic ?? 0))
+    .slice(0, 10);
+
+  const lines: string[] = [
+    `# SERPVault Action Plan — ${date}`,
+    '',
+    '## Top Keyword Opportunities',
+    '',
+    '| Keyword | Volume | Difficulty | Intent | Tag | Score |',
+    '|---------|--------|------------|--------|-----|-------|',
+    ...topKw.map(
+      (r) =>
+        `| ${r.keyword} | ${r.volume ?? '-'} | ${r.difficulty ?? '-'} | ${r.intent ?? '-'} | ${r.tag ?? '-'} | ${r.opportunityScore ?? '-'} |`
+    ),
+    '',
+    '## Top Backlink Targets',
+    '',
+    '| Source URL | Anchor | DA | Score |',
+    '|------------|--------|----|-------|',
+    ...topBl.map(
+      (r) =>
+        `| ${r.sourceUrl} | ${r.anchorText ?? '-'} | ${r.domainAuthority ?? '-'} | ${r.opportunityScore ?? '-'} |`
+    ),
+    '',
+    '## Competitor Top Pages',
+    '',
+    '| URL | Traffic | Keywords |',
+    '|-----|---------|----------|',
+    ...topComp.map((r) => `| ${r.url} | ${r.traffic ?? '-'} | ${r.keywords ?? '-'} |`),
+  ];
+
+  download(lines.join('\n'), 'serpvault-action-plan.md', 'text/markdown');
+}

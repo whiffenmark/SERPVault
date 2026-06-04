@@ -1,36 +1,117 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SERPVault — Private SEO Research Database
 
-## Getting Started
+A private SEO command center for uploading, cleaning, deduplicating, tagging, and exporting SEO research data from tools like SEMrush, Ahrefs, Moz, and more.
 
-First, run the development server:
+---
+
+## 1. How to Run Locally
 
 ```bash
+cd serpvault
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 2. How to Upload CSVs
 
-## Learn More
+1. Click **Upload CSVs** in the sidebar.
+2. Drag and drop one or more `.csv` files, or click to browse.
+3. The report type is auto-detected from the filename and column headers.
+4. A dedupe report is created automatically for each file.
+5. Cleaned rows are stored in your browser's `localStorage`.
 
-To learn more about Next.js, take a look at the following resources:
+**Supported report types:**
+- Keyword Report (SEMrush/Ahrefs keyword exports)
+- Keyword Gap Report
+- Competitor Top Pages
+- Backlink Report
+- Referring Domains
+- Anchor Text Report
+- Organic Positions
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+---
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 3. How Dedupe Works
 
-## Deploy on Vercel
+Each report type uses a specific key to identify duplicates:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| Report Type       | Dedupe Key                                     |
+|-------------------|------------------------------------------------|
+| Keywords          | keyword + database/country + intent            |
+| Keyword Gap       | keyword + competitor domain + your domain      |
+| Competitor Pages  | domain + URL                                   |
+| Backlinks         | source URL + target URL + anchor text          |
+| Referring Domains | referring domain + target domain               |
+| Anchor Text       | anchor text                                    |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- If required columns are missing, a fallback to all columns is used, and a warning is logged in the dedupe report.
+- **Raw files are never deleted.** Only cleaned (deduped) rows are stored.
+- View all dedupe reports in the **Dedupe Reports** page.
+
+---
+
+## 4. How to Deploy on Vercel
+
+1. Push this repo to GitHub.
+2. Go to [vercel.com](https://vercel.com) → New Project → Import your repo.
+3. Set the root directory to `serpvault` (if not at repo root).
+4. Add environment variables (see below).
+5. Click Deploy.
+
+The app builds and runs fully without any environment variables.
+
+---
+
+## 5. How to Add Supabase Later
+
+1. Create a project at [supabase.com](https://supabase.com).
+2. Go to the SQL Editor and run the contents of `supabase/schema.sql`.
+3. Copy your project URL and anon key from Project Settings → API.
+4. Add them to `.env.local`:
+
+```
+NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGci...
+```
+
+5. Restart your dev server.
+
+The Supabase client is in `lib/supabase/client.ts`. The app gracefully falls back to localStorage if Supabase is not configured.
+
+---
+
+## 6. Environment Variables
+
+Copy `.env.example` to `.env.local` and fill in values:
+
+```bash
+cp .env.example .env.local
+```
+
+| Variable                        | Required | Description                     |
+|---------------------------------|----------|---------------------------------|
+| `NEXT_PUBLIC_SUPABASE_URL`      | No       | Your Supabase project URL       |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | No       | Your Supabase anon (public) key |
+
+The app builds and runs fully without these variables.
+
+---
+
+## 7. Raw Files Are Never Deleted
+
+SERPVault only stores parsed row data in localStorage — not the original CSV file content. This keeps storage usage low. The original files remain on your computer. You can re-upload any file at any time.
+
+---
+
+## Tech Stack
+
+- **Next.js** (App Router)
+- **TypeScript**
+- **Tailwind CSS**
+- **PapaParse** (CSV parsing)
+- **localStorage** (browser storage, no server needed)
+- **Supabase** (optional cloud storage)
