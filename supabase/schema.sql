@@ -110,3 +110,17 @@ create table if not exists dedupe_reports (
   issues jsonb,
   duplicate_examples jsonb
 );
+
+-- ---------------------------------------------------------------------------
+-- Disable Row Level Security for personal use.
+-- This allows the publishable key to read/write all tables freely.
+-- If you add Supabase Auth later, re-enable RLS and add user-scoped policies.
+-- ---------------------------------------------------------------------------
+alter table uploads disable row level security;
+alter table keywords disable row level security;
+alter table keyword_gaps disable row level security;
+alter table competitor_pages disable row level security;
+alter table backlinks disable row level security;
+alter table referring_domains disable row level security;
+alter table anchor_texts disable row level security;
+alter table dedupe_reports disable row level security;

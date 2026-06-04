@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { getStore, updateStore } from '@/lib/storage';
+import { updateStore } from '@/lib/storage';
+import * as db from '@/lib/db';
 import type { KeywordRecord, Tag } from '@/lib/types';
 import DataTable from '@/components/DataTable';
 import ScoreBadge from '@/components/ScoreBadge';
@@ -10,17 +11,19 @@ import type { Column } from '@/components/DataTable';
 
 export default function KeywordsPage() {
   const [keywords, setKeywords] = useState<KeywordRecord[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setKeywords(getStore().keywords);
+    db.getKeywords().then(setKeywords).finally(() => setLoading(false));
   }, []);
 
-  const handleTagChange = useCallback((id: string, tag: Tag | undefined) => {
-    const updated = updateStore((store) => ({
-      ...store,
-      keywords: store.keywords.map((k) => (k.id === id ? { ...k, tag } : k)),
-    }));
-    setKeywords(updated.keywords);
+  const handleTagChange = useCallback(async (id: string, tag: Tag | undefined) => {
+    // Optimistic update
+    setKeywords((prev) => prev.map((k) => (k.id === id ? { ...k, tag } : k)));
+    // Persist to localStorage cache
+    updateStore((s) => ({ ...s, keywords: s.keywords.map((k) => (k.id === id ? { ...k, tag } : k)) }));
+    // Persist to Supabase
+    await db.updateTag('keywords', id, tag);
   }, []);
 
   const avgDiff = keywords.length
@@ -30,32 +33,12 @@ export default function KeywordsPage() {
 
   const columns: Column<KeywordRecord>[] = [
     { key: 'keyword', label: 'Keyword', sortKey: (r) => r.keyword },
-    {
-      key: 'volume',
-      label: 'Volume',
-      sortKey: (r) => r.volume ?? 0,
-      render: (r) => r.volume?.toLocaleString() ?? '-',
-    },
-    {
-      key: 'difficulty',
-      label: 'KD',
-      sortKey: (r) => r.difficulty ?? 0,
-      render: (r) => r.difficulty ?? '-',
-    },
-    {
-      key: 'cpc',
-      label: 'CPC',
-      sortKey: (r) => r.cpc ?? 0,
-      render: (r) => (r.cpc != null ? `$${r.cpc.toFixed(2)}` : '-'),
-    },
+    { key: 'volume', label: 'Volume', sortKey: (r) => r.volume ?? 0, render: (r) => r.volume?.toLocaleString() ?? '-' },
+    { key: 'difficulty', label: 'KD', sortKey: (r) => r.difficulty ?? 0, render: (r) => r.difficulty ?? '-' },
+    { key: 'cpc', label: 'CPC', sortKey: (r) => r.cpc ?? 0, render: (r) => (r.cpc != null ? `$${r.cpc.toFixed(2)}` : '-') },
     { key: 'intent', label: 'Intent', render: (r) => r.intent ?? '-' },
     { key: 'database', label: 'Database', render: (r) => r.database ?? '-' },
-    {
-      key: 'opportunityScore',
-      label: 'Score',
-      sortKey: (r) => r.opportunityScore ?? 0,
-      render: (r) => <ScoreBadge score={r.opportunityScore ?? 0} />,
-    },
+    { key: 'opportunityScore', label: 'Score', sortKey: (r) => r.opportunityScore ?? 0, render: (r) => <ScoreBadge score={r.opportunityScore ?? 0} /> },
   ];
 
   return (
@@ -72,7 +55,9 @@ export default function KeywordsPage() {
         <Card title="Tagged" value={keywords.filter((k) => k.tag).length} accent />
       </div>
 
-      {keywords.length === 0 ? (
+      {loading ? (
+        <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>Loading…</div>
+      ) : keywords.length === 0 ? (
         <div style={{ background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>
           No keywords yet. <a href="/upload" style={{ color: 'var(--accent)' }}>Upload a keyword CSV</a> to get started.
         </div>

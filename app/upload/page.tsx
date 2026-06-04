@@ -5,7 +5,6 @@ import UploadZone from '@/components/UploadZone';
 import { parseCSV } from '@/lib/parse-csv';
 import { detectReportType } from '@/lib/detect-report-type';
 import { dedupeRows } from '@/lib/dedupe';
-import { updateStore, removeUpload } from '@/lib/storage';
 import { nanoid } from '@/lib/nanoid';
 import {
   mapKeyword,
@@ -16,6 +15,7 @@ import {
   mapAnchorText,
   isGarbageKeyword,
 } from '@/lib/map-rows';
+import * as db from '@/lib/db';
 import type { ReportType, UploadRecord, DedupeReport } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
@@ -66,58 +66,51 @@ const ALL_TYPES: ReportType[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Import logic (shared between first import and re-import)
+// Import logic — async, writes to Supabase + localStorage cache
 // ---------------------------------------------------------------------------
 
-function commitToStore(
+async function commitToStore(
   rows: Record<string, string>[],
   reportType: ReportType,
   filename: string
-): {
+): Promise<{
   uploadId: string;
   totalRows: number;
   cleanedRows: number;
   duplicatesRemoved: number;
   issues: string[];
-} {
+}> {
   const uploadId = nanoid();
   const { cleaned, report } = dedupeRows(rows, reportType, uploadId, filename);
 
   const dedupeReport: DedupeReport = { ...report, uploadId, filename };
   const upload: UploadRecord = {
-    id: uploadId,
-    filename,
-    reportType,
+    id: uploadId, filename, reportType,
     uploadedAt: new Date().toISOString(),
     rowCount: rows.length,
     cleanedRowCount: cleaned.length,
     dedupeReportId: dedupeReport.id,
   };
 
-  updateStore((store) => {
-    const next = { ...store };
-    next.uploads = [...next.uploads, upload];
-    next.dedupeReports = [...next.dedupeReports, dedupeReport];
+  // Persist upload + dedupe report
+  await db.saveUpload(upload);
+  await db.saveDedupeReport(dedupeReport);
 
-    if (reportType === 'keyword' || reportType === 'organic_positions') {
-      const mapped = cleaned.map((r) => mapKeyword(r, uploadId));
-      // Filter out garbage rows from mixed-format exports (e.g. SEMrush SERP overview)
-      next.keywords = [...next.keywords, ...mapped.filter((k) => !isGarbageKeyword(k.keyword))];
-    } else if (reportType === 'keyword_gap') {
-      next.keywordGaps = [...next.keywordGaps, ...cleaned.map((r) => mapKeywordGap(r, uploadId))];
-    } else if (reportType === 'competitor_pages') {
-      next.competitorPages = [...next.competitorPages, ...cleaned.map((r) => mapCompetitorPage(r, uploadId))];
-    } else if (reportType === 'backlink') {
-      next.backlinks = [...next.backlinks, ...cleaned.map((r) => mapBacklink(r, uploadId))];
-    } else if (reportType === 'referring_domain') {
-      next.referringDomains = [...next.referringDomains, ...cleaned.map((r) => mapReferringDomain(r, uploadId))];
-    } else if (reportType === 'anchor_text') {
-      next.anchorTexts = [...next.anchorTexts, ...cleaned.map((r) => mapAnchorText(r, uploadId))];
-    }
-    // unknown: don't store — caller should not reach here with unknown
-
-    return next;
-  });
+  // Persist rows by type
+  if (reportType === 'keyword' || reportType === 'organic_positions') {
+    const mapped = cleaned.map((r) => mapKeyword(r, uploadId)).filter((k) => !isGarbageKeyword(k.keyword));
+    await db.saveKeywords(mapped);
+  } else if (reportType === 'keyword_gap') {
+    await db.saveKeywordGaps(cleaned.map((r) => mapKeywordGap(r, uploadId)));
+  } else if (reportType === 'competitor_pages') {
+    await db.saveCompetitorPages(cleaned.map((r) => mapCompetitorPage(r, uploadId)));
+  } else if (reportType === 'backlink') {
+    await db.saveBacklinks(cleaned.map((r) => mapBacklink(r, uploadId)));
+  } else if (reportType === 'referring_domain') {
+    await db.saveReferringDomains(cleaned.map((r) => mapReferringDomain(r, uploadId)));
+  } else if (reportType === 'anchor_text') {
+    await db.saveAnchorTexts(cleaned.map((r) => mapAnchorText(r, uploadId)));
+  }
 
   return {
     uploadId,
@@ -188,12 +181,8 @@ export default function UploadPage() {
 
           if (detectedType !== 'unknown') {
             // Auto-import known types
-            const imported = commitToStore(rows, detectedType, file.name);
-            newResults.push({
-              ...result,
-              status: 'imported',
-              ...imported,
-            });
+            const imported = await commitToStore(rows, detectedType, file.name);
+            newResults.push({ ...result, status: 'imported', ...imported });
           } else {
             newResults.push(result);
           }
@@ -216,10 +205,10 @@ export default function UploadPage() {
 
   // ---- Manually import a pending (unknown) file ----
   const handleImport = useCallback(
-    (id: string) => {
+    async (id: string) => {
       const result = results.find((r) => r.id === id);
       if (!result || result.selectedType === 'unknown') return;
-      const imported = commitToStore(result.rows, result.selectedType, result.filename);
+      const imported = await commitToStore(result.rows, result.selectedType, result.filename);
       updateResult(id, {
         status: 'imported',
         detectedType: result.selectedType,
@@ -233,12 +222,11 @@ export default function UploadPage() {
 
   // ---- Re-import an already-imported file with a new type ----
   const handleReimport = useCallback(
-    (id: string, newType: ReportType) => {
+    async (id: string, newType: ReportType) => {
       const result = results.find((r) => r.id === id);
       if (!result || !result.uploadId || newType === 'unknown') return;
-      // Remove old data from storage first
-      removeUpload(result.uploadId);
-      const imported = commitToStore(result.rows, newType, result.filename);
+      await db.deleteUpload(result.uploadId);
+      const imported = await commitToStore(result.rows, newType, result.filename);
       updateResult(id, {
         status: 'imported',
         selectedType: newType,
