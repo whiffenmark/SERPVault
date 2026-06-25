@@ -26,6 +26,7 @@ const FILENAME_RULES: Array<{ pattern: RegExp; type: ReportType }> = [
   { pattern: /keyword[\s_-]gap|kw[\s_-]gap|gap[\s_-]report/i, type: 'keyword_gap' },
   { pattern: /organic[\s_-]research|organic[\s_-]position|serp[\s_-]position/i, type: 'organic_positions' },
   { pattern: /top[\s_-]page|competitor[\s_-]page|pages[\s_-]report/i, type: 'competitor_pages' },
+  { pattern: /hermes|keyword[\s_-]report/i, type: 'keyword' },
   { pattern: /keyword[\s_-]overview|keyword[\s_-]magic|keyword[\s_-]analytic/i, type: 'keyword' },
   // Generic fallbacks
   { pattern: /position|ranking/i, type: 'organic_positions' },
@@ -48,6 +49,18 @@ function scoreColumns(rawHeaders: string[]): Map<ReportType, number> {
   const hasKD = any(h, 'keyword difficulty', 'kd', 'difficulty');
   const hasCPC = any(h, 'cost per click', 'cpc');
   const hasIntent = any(h, 'search intent', 'intent');
+  const hasHermesKeywordReport =
+    hasKeyword &&
+    count(
+      h,
+      'cluster',
+      'page_target',
+      'page target',
+      'serpvault_tag',
+      'serpvault tag',
+      'priority',
+      'niche'
+    ) >= 2;
 
   // Position
   const hasPosition = h.some(
@@ -206,6 +219,7 @@ function scoreColumns(rawHeaders: string[]): Map<ReportType, number> {
   if (hasKD) add('keyword', 2);
   if (hasCPC) add('keyword', 2);
   if (hasIntent) add('keyword', 2);
+  if (hasHermesKeywordReport) add('keyword', 12);
   if (hasPosition) add('keyword', -4); // organic_positions more likely
   if (hasSourceUrl || hasRefDomain) add('keyword', -10);
 

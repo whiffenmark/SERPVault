@@ -5,6 +5,7 @@ import type {
   BacklinkRecord,
   ReferringDomainRecord,
   AnchorTextRecord,
+  Tag,
 } from './types';
 import { nanoid } from './nanoid';
 import { scoreKeyword, scoreKeywordGap, scoreBacklink } from './opportunity-score';
@@ -96,6 +97,30 @@ function num(row: Record<string, string>, ...candidates: string[]): number | und
   return parseFormattedNum(col(row, ...candidates));
 }
 
+const TAG_ALIASES: Record<string, Tag> = {
+  'money page': 'Money Page',
+  'money_page': 'Money Page',
+  'blog post': 'Blog Post',
+  'blog_post': 'Blog Post',
+  'city page': 'City Page',
+  'city_page': 'City Page',
+  'backlink target': 'Backlink Target',
+  'backlink_target': 'Backlink Target',
+  'link bait': 'Link Bait',
+  'link_bait': 'Link Bait',
+  ignore: 'Ignore',
+};
+
+function normalizeTag(v: string): Tag | undefined {
+  if (!v) return undefined;
+  const key = clean(v).toLowerCase().replace(/[-]+/g, ' ').replace(/\s+/g, ' ');
+  return TAG_ALIASES[key] ?? TAG_ALIASES[key.replace(/ /g, '_')];
+}
+
+function tag(row: Record<string, string>, ...candidates: string[]): Tag | undefined {
+  return normalizeTag(col(row, ...candidates));
+}
+
 // ---------------------------------------------------------------------------
 // Row mappers
 // ---------------------------------------------------------------------------
@@ -135,8 +160,10 @@ export function mapKeyword(row: Record<string, string>, uploadId: string): Keywo
     ),
     intent: col(row, 'intent', 'search intent'),
     database: col(row, 'database', 'country', 'location', 'market'),
+    country: col(row, 'country', 'location', 'market'),
     position: num(row, 'position', 'rank', 'ranking'),
     url: col(row, 'url', 'landing page', 'landing url', 'page url'),
+    tag: tag(row, 'serpvault_tag', 'serpvault tag', 'tag'),
     raw: row,
   };
   r.opportunityScore = scoreKeyword(r);
