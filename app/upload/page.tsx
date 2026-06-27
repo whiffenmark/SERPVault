@@ -42,6 +42,16 @@ interface FileResult {
   // UI toggles
   showColumns: boolean;
   showReimport: boolean;
+  // Health check review data (for keyword reports before storing)
+  health?: {
+    totalRows: number;
+    duplicateCount: number;
+    missingKeywordCount: number;
+    hermesCoverage: Record<string, number>; // % of rows with field present (0-100)
+    hasCluster: boolean;
+    hasPageTarget: boolean;
+    preview: Record<string, string>[];
+  };
 }
 
 const REPORT_LABELS: Record<ReportType, string> = {
@@ -179,10 +189,43 @@ export default function UploadPage() {
             showColumns: detectedType === 'unknown',
           };
 
-          if (detectedType !== 'unknown') {
-            // Auto-import known types
+          if (detectedType !== 'unknown' && detectedType !== 'keyword') {
+            // Auto-import known types (except keyword which gets health-check review)
             const imported = await commitToStore(rows, detectedType, file.name);
             newResults.push({ ...result, status: 'imported', ...imported });
+          } else if (detectedType === 'keyword') {
+            // Compute health checks for keyword report review before storing
+            const { cleaned, report } = dedupeRows(rows, detectedType, nanoid(), file.name);
+            const duplicateCount = report.duplicatesRemoved;
+            const sampleKeys = Object.keys(rows[0] || {});
+            const kwCol = sampleKeys.find(k =>
+              ['keyword','search term','query','keywords'].some(p => k.toLowerCase().includes(p))
+            ) || sampleKeys[0] || 'keyword';
+            const missingKeywordCount = rows.filter(r => !r[kwCol] || r[kwCol].trim() === '').length;
+
+            const hermesFields = ['cluster','page_target','priority','serpvault_tag','intent','domain','location','niche'];
+            const hermesCoverage: Record<string, number> = {};
+            hermesFields.forEach(f => {
+              const present = rows.filter(r => {
+                const val = r[f] ?? r[f.replace('_',' ')] ?? r[f.charAt(0).toUpperCase() + f.slice(1)] ?? r[f.toUpperCase()] ?? '';
+                return val && val.trim() !== '';
+              }).length;
+              hermesCoverage[f] = rows.length ? Math.round((present / rows.length) * 100) : 0;
+            });
+            const preview = rows.slice(0, 5);
+
+            newResults.push({
+              ...result,
+              health: {
+                totalRows: rows.length,
+                duplicateCount,
+                missingKeywordCount,
+                hermesCoverage,
+                hasCluster: hermesCoverage.cluster > 0,
+                hasPageTarget: hermesCoverage.page_target > 0 || sampleKeys.some(h => /page.?target/i.test(h)),
+                preview,
+              }
+            });
           } else {
             newResults.push(result);
           }
@@ -373,7 +416,7 @@ function ResultCard({
         </div>
       )}
 
-      {status === 'pending' && detectedType !== 'unknown' && (
+      {status === 'pending' && detectedType !== 'unknown' && !result.health && (
         <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>
           Auto-importing as{' '}
           <span style={{ color: 'var(--accent)' }}>{REPORT_LABELS[detectedType]}</span>…
@@ -383,6 +426,62 @@ function ResultCard({
       {status === 'pending' && detectedType === 'unknown' && (
         <div style={{ fontSize: '0.82rem', color: 'var(--warning)', fontWeight: 500 }}>
           ⚠ Could not detect report type — select one below and click Import.
+        </div>
+      )}
+
+      {/* Upload Health Check Review Panel for Keyword Reports */}
+      {status === 'pending' && result.health && (
+        <div style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '6px', padding: '0.75rem', marginTop: '0.25rem' }}>
+          <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--accent)', marginBottom: '0.5rem' }}>
+            📋 Upload Health Check — Review before storing
+          </div>
+          <div style={{ fontSize: '0.78rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.25rem 1rem', color: 'var(--muted)' }}>
+            <div><strong>Detected:</strong> {REPORT_LABELS[detectedType]}</div>
+            <div><strong>Total rows:</strong> {result.health.totalRows.toLocaleString()}</div>
+            <div><strong>Duplicates:</strong> {result.health.duplicateCount.toLocaleString()}</div>
+            <div><strong>Missing keyword:</strong> {result.health.missingKeywordCount.toLocaleString()}</div>
+          </div>
+
+          <div style={{ marginTop: '0.5rem', fontSize: '0.78rem' }}>
+            <strong>Hermes field coverage:</strong>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginTop: '0.25rem' }}>
+              {Object.entries(result.health.hermesCoverage).map(([f, pct]) => (
+                <span key={f} style={{ background: pct > 30 ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)', color: pct > 30 ? 'var(--success)' : 'var(--warning)', padding: '0.1rem 0.4rem', borderRadius: '3px', fontSize: '0.72rem' }}>
+                  {f}: {pct}%
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {( !result.health.hasCluster || !result.health.hasPageTarget ) && (
+            <div style={{ marginTop: '0.4rem', fontSize: '0.78rem', color: 'var(--danger)' }}>
+              ⚠ Warning: Missing cluster or page_target in data. Hermes features may be limited.
+            </div>
+          )}
+
+          <div style={{ marginTop: '0.5rem' }}>
+            <button
+              onClick={onImport}
+              style={{
+                background: 'var(--accent)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '0.3rem 0.9rem',
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Confirm &amp; Store
+            </button>
+            <span style={{ marginLeft: '0.75rem', fontSize: '0.72rem', color: 'var(--muted)' }}>Preview of first 5 rows below (columns shown if toggled)</span>
+          </div>
+
+          {/* Preview first 5 rows */}
+          <div style={{ marginTop: '0.5rem', fontSize: '0.7rem', background: '#111', padding: '0.4rem', borderRadius: '4px', overflowX: 'auto', color: '#aaa' }}>
+            <pre style={{ margin: 0, whiteSpace: 'pre' }}>{JSON.stringify(result.health.preview, null, 2)}</pre>
+          </div>
         </div>
       )}
 
