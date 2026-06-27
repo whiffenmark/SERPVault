@@ -39,6 +39,14 @@ export default function KeywordsPage() {
     { key: 'intent', label: 'Intent', render: (r) => r.intent ?? '-' },
     { key: 'database', label: 'Database', render: (r) => r.database ?? '-' },
     { key: 'opportunityScore', label: 'Score', sortKey: (r) => r.opportunityScore ?? 0, render: (r) => <ScoreBadge score={r.opportunityScore ?? 0} /> },
+    // Hermes keyword_report fields via raw (safe fallback for normal CSVs)
+    { key: 'cluster', label: 'Cluster', render: (r) => r.raw?.cluster ?? r.raw?.Cluster ?? r.raw?.['Cluster'] ?? '-' },
+    { key: 'page_target', label: 'Page Target', render: (r) => r.raw?.page_target ?? r.raw?.['page target'] ?? r.raw?.pageTarget ?? '-' },
+    { key: 'priority', label: 'Priority', render: (r) => r.raw?.priority ?? r.raw?.Priority ?? '-' },
+    { key: 'domain', label: 'Domain', render: (r) => r.raw?.domain ?? r.raw?.Domain ?? '-' },
+    { key: 'location', label: 'Location', render: (r) => r.raw?.location ?? r.raw?.Location ?? r.raw?.country ?? '-' },
+    { key: 'niche', label: 'Niche', render: (r) => r.raw?.niche ?? r.raw?.Niche ?? '-' },
+    { key: 'serpvault_tag_raw', label: 'SV Tag (raw)', render: (r) => r.raw?.serpvault_tag ?? r.raw?.['serpvault tag'] ?? r.raw?.serpvaultTag ?? '-' },
   ];
 
   return (
