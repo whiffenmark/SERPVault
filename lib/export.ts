@@ -125,3 +125,104 @@ export function exportActionPlanMD(
 
   download(lines.join('\n'), 'serpvault-action-plan.md', 'text/markdown');
 }
+
+function getHermesField(raw: Record<string, string>, ...keys: string[]): string {
+  for (const k of keys) {
+    const v = raw[k];
+    if (v != null && v !== '') return v;
+  }
+  return '-';
+}
+
+export function exportHermesContentPlanCSV(rows: KeywordRecord[]): void {
+  const hermesRows = rows.filter((k) => {
+    const r = k.raw || {};
+    return !!(r.cluster || r.Cluster || r['Cluster'] || r.page_target || r['page target'] || r.pageTarget);
+  });
+  const data = hermesRows.map((row) => {
+    const r = row.raw || {};
+    return {
+      keyword: row.keyword,
+      cluster: getHermesField(r, 'cluster', 'Cluster', 'CLUSTER'),
+      page_target: getHermesField(r, 'page_target', 'page target', 'pageTarget', 'Page Target'),
+      priority: getHermesField(r, 'priority', 'Priority'),
+      serpvault_tag: getHermesField(r, 'serpvault_tag', 'serpvault tag', 'serpvaultTag'),
+      intent: getHermesField(r, 'intent', 'Intent') || row.intent || '-',
+      domain: getHermesField(r, 'domain', 'Domain'),
+      location: getHermesField(r, 'location', 'Location', 'country', 'database'),
+      niche: getHermesField(r, 'niche', 'Niche'),
+    };
+  });
+  if (data.length === 0) {
+    // still download empty? or handled in UI; per task, empty state in page
+    download('keyword,cluster,page_target,priority,serpvault_tag,intent,domain,location,niche\n', 'hermes-content-plan.csv');
+    return;
+  }
+  download(toCSV(data), 'hermes-content-plan.csv');
+}
+
+export function exportHermesContentPlanMD(rows: KeywordRecord[]): void {
+  const hermesRows = rows.filter((k) => {
+    const r = k.raw || {};
+    return !!(r.cluster || r.Cluster || r['Cluster'] || r.page_target || r['page target'] || r.pageTarget);
+  });
+  const date = new Date().toLocaleDateString();
+  if (hermesRows.length === 0) {
+    const md = `# Hermes Content Plan — ${date}\n\nNo Hermes keyword data found. Upload a Hermes keyword_report CSV with cluster/page_target fields.`;
+    download(md, 'hermes-content-plan.md', 'text/markdown');
+    return;
+  }
+
+  // Group by cluster -> page_target (mirrors keywords page groupedPlanner)
+  const clusterMap = new Map<string, Map<string, { meta: any; keywords: KeywordRecord[] }>>();
+  for (const row of hermesRows) {
+    const r = row.raw || {};
+    const cluster = getHermesField(r, 'cluster', 'Cluster', 'CLUSTER');
+    const pageTarget = getHermesField(r, 'page_target', 'page target', 'pageTarget', 'Page Target');
+    if (!clusterMap.has(cluster)) clusterMap.set(cluster, new Map());
+    const ptMap = clusterMap.get(cluster)!;
+    if (!ptMap.has(pageTarget)) {
+      ptMap.set(pageTarget, {
+        meta: {
+          priority: getHermesField(r, 'priority', 'Priority'),
+          serpvault_tag: getHermesField(r, 'serpvault_tag', 'serpvault tag', 'serpvaultTag'),
+          intent: getHermesField(r, 'intent', 'Intent') || row.intent || '-',
+          domain: getHermesField(r, 'domain', 'Domain'),
+          location: getHermesField(r, 'location', 'Location', 'country', 'database'),
+          niche: getHermesField(r, 'niche', 'Niche'),
+        },
+        keywords: [],
+      });
+    }
+    ptMap.get(pageTarget)!.keywords.push(row);
+  }
+
+  const lines: string[] = [
+    `# Hermes Content Plan — ${date}`,
+    '',
+  ];
+  for (const [cluster, ptMap] of clusterMap.entries()) {
+    const total = Array.from(ptMap.values()).reduce((s, g) => s + g.keywords.length, 0);
+    lines.push(`## 📁 Cluster: ${cluster} (${total} keywords)`);
+    lines.push('');
+    for (const [pageTarget, { meta, keywords }] of ptMap.entries()) {
+      lines.push(`### 🎯 Page Target: ${pageTarget}`);
+      lines.push('');
+      lines.push(`- **Priority:** ${meta.priority}`);
+      lines.push(`- **SV Tag:** ${meta.serpvault_tag}`);
+      lines.push(`- **Intent:** ${meta.intent}`);
+      lines.push(`- **Domain:** ${meta.domain}`);
+      lines.push(`- **Location:** ${meta.location}`);
+      lines.push(`- **Niche:** ${meta.niche}`);
+      lines.push('');
+      lines.push('**Keywords:**');
+      for (const k of keywords) {
+        const vol = k.volume != null ? ` (${k.volume.toLocaleString()})` : '';
+        lines.push(`- ${k.keyword}${vol}`);
+      }
+      lines.push('');
+    }
+  }
+
+  download(lines.join('\n'), 'hermes-content-plan.md', 'text/markdown');
+}
