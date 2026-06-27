@@ -8,6 +8,8 @@ import {
   exportContentPlanCSV,
   exportBacklinkTargetsCSV,
   exportActionPlanMD,
+  exportHermesContentPlanCSV,
+  exportHermesContentPlanMD,
 } from '@/lib/export';
 
 export default function ExportPage() {
@@ -28,19 +30,22 @@ export default function ExportPage() {
 
   const cards = [
     {
-      title: 'All Keywords CSV', icon: '◈',
+      title: 'All Keywords CSV',
+      icon: '◈',
       description: 'Every keyword with volume, KD, CPC, intent, tag, and opportunity score.',
       action: () => run('kw', async () => exportKeywordsCSV(await db.getKeywords())),
       countFn: async () => `${(await db.getKeywords()).length.toLocaleString()} keywords`,
     },
     {
-      title: 'All Backlinks CSV', icon: '⛓',
+      title: 'All Backlinks CSV',
+      icon: '⛓',
       description: 'Every backlink with source/target URLs, anchor text, DA, tag, and score.',
       action: () => run('bl', async () => exportBacklinksCSV(await db.getBacklinks())),
       countFn: async () => `${(await db.getBacklinks()).length.toLocaleString()} backlinks`,
     },
     {
-      title: 'Content Plan CSV', icon: '✎',
+      title: 'Content Plan CSV',
+      icon: '✎',
       description: 'Only tagged (non-Ignore) keywords as a prioritized content calendar.',
       action: () => run('cp', async () => exportContentPlanCSV(await db.getKeywords())),
       countFn: async () => {
@@ -49,7 +54,36 @@ export default function ExportPage() {
       },
     },
     {
-      title: 'Backlink Targets CSV', icon: '🎯',
+      title: 'Hermes Content Plan CSV',
+      icon: '📋',
+      description: 'Hermes keyword_report data (cluster/page_target) exported as CSV. Uses only existing keyword data with safe raw fallbacks.',
+      action: () => run('hcsv', async () => exportHermesContentPlanCSV(await db.getKeywords())),
+      countFn: async () => {
+        const kws = await db.getKeywords();
+        const hermes = kws.filter((k) => {
+          const r = k.raw || {};
+          return !!(r.cluster || r.Cluster || r['Cluster'] || r.page_target || r['page target'] || r.pageTarget);
+        });
+        return hermes.length > 0 ? `${hermes.length.toLocaleString()} Hermes keywords` : 'No Hermes data';
+      },
+    },
+    {
+      title: 'Hermes Content Plan Markdown',
+      icon: '📝',
+      description: 'Grouped Cluster → Page Target Markdown matching the Hermes planner view. Helpful empty state included when no data.',
+      action: () => run('hmd', async () => exportHermesContentPlanMD(await db.getKeywords())),
+      countFn: async () => {
+        const kws = await db.getKeywords();
+        const hermes = kws.filter((k) => {
+          const r = k.raw || {};
+          return !!(r.cluster || r.Cluster || r['Cluster'] || r.page_target || r['page target'] || r.pageTarget);
+        });
+        return hermes.length > 0 ? `${hermes.length.toLocaleString()} Hermes keywords` : 'No Hermes data';
+      },
+    },
+    {
+      title: 'Backlink Targets CSV',
+      icon: '🎯',
       description: 'Rows tagged as "Backlink Target" — your link acquisition hit list.',
       action: () => run('bt', async () => exportBacklinkTargetsCSV(await db.getBacklinks())),
       countFn: async () => {
@@ -58,7 +92,8 @@ export default function ExportPage() {
       },
     },
     {
-      title: 'Action Plan Markdown', icon: '📋',
+      title: 'Action Plan Markdown',
+      icon: '📋',
       description: 'Formatted Markdown action plan with top keywords, backlinks, and competitor pages.',
       action: () => run('md', async () => {
         const [kws, bls, cps] = await Promise.all([db.getKeywords(), db.getBacklinks(), db.getCompetitorPages()]);
@@ -101,7 +136,11 @@ export default function ExportPage() {
       </div>
       <div style={{ marginTop: '2rem', background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '1.25rem' }}>
         <h2 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Tip: Tag first, then export</h2>
-        <p style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>Visit the Keyword Database or Backlink Opportunities pages to tag rows first. Content Plan and Backlink Target exports are filtered by your tags.</p>
+        <p style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>Visit the Keyword Database or Backlink Opportunities pages to tag rows first. Content Plan and Backlink Target exports are filtered by your tags. Hermes exports use only rows with cluster/page_target fields from raw data.</p>
+      </div>
+      {/* Hermes empty state helper note */}
+      <div style={{ marginTop: '1rem', fontSize: '0.75rem', color: 'var(--muted)', textAlign: 'center' }}>
+        Hermes exports show “No Hermes data” when no keyword rows contain cluster / page_target / serpvault_tag etc.
       </div>
     </div>
   );
