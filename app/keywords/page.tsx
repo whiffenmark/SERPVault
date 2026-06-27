@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { updateStore } from '@/lib/storage';
 import * as db from '@/lib/db';
 import type { KeywordRecord, Tag } from '@/lib/types';
@@ -30,6 +30,38 @@ export default function KeywordsPage() {
     ? Math.round(keywords.reduce((s, k) => s + (k.difficulty ?? 0), 0) / keywords.length)
     : 0;
   const totalVol = keywords.reduce((s, k) => s + (k.volume ?? 0), 0);
+
+  // Hermes Grouped Planner data
+  const hermesRows = keywords.filter((k) => {
+    const r = k.raw || {};
+    return !!(r.cluster || r.Cluster || r['Cluster'] || r.page_target || r['page target'] || r.pageTarget);
+  });
+
+  const groupedPlanner = useMemo(() => {
+    const clusterMap = new Map<string, Map<string, { meta: any; keywords: KeywordRecord[] }>>();
+    for (const row of hermesRows) {
+      const r = row.raw || {};
+      const cluster = r.cluster ?? r.Cluster ?? r['Cluster'] ?? 'Uncategorized';
+      const pageTarget = r.page_target ?? r['page target'] ?? r.pageTarget ?? 'No Page Target';
+      if (!clusterMap.has(cluster)) clusterMap.set(cluster, new Map());
+      const ptMap = clusterMap.get(cluster)!;
+      if (!ptMap.has(pageTarget)) {
+        ptMap.set(pageTarget, {
+          meta: {
+            priority: r.priority ?? r.Priority ?? '-',
+            serpvault_tag: r.serpvault_tag ?? r['serpvault tag'] ?? r.serpvaultTag ?? '-',
+            intent: r.intent ?? r.Intent ?? row.intent ?? '-',
+            domain: r.domain ?? r.Domain ?? '-',
+            location: r.location ?? r.Location ?? r.country ?? row.country ?? '-',
+            niche: r.niche ?? r.Niche ?? '-',
+          },
+          keywords: [],
+        });
+      }
+      ptMap.get(pageTarget)!.keywords.push(row);
+    }
+    return clusterMap;
+  }, [hermesRows]);
 
   const columns: Column<KeywordRecord>[] = [
     { key: 'keyword', label: 'Keyword', sortKey: (r) => r.keyword },
@@ -61,6 +93,55 @@ export default function KeywordsPage() {
         <Card title="Total Search Volume" value={totalVol.toLocaleString()} />
         <Card title="Avg KD" value={avgDiff} />
         <Card title="Tagged" value={keywords.filter((k) => k.tag).length} accent />
+      </div>
+
+      {/* Hermes Grouped Planner - new accordion section */}
+      <div style={{ marginBottom: '2rem' }}>
+        <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '0.75rem' }}>Hermes Grouped Planner</h2>
+        {hermesRows.length === 0 ? (
+          <div style={{ background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '2rem', textAlign: 'center', color: 'var(--muted)' }}>
+            No Hermes keyword data yet.<br />
+            Upload a Hermes <strong>keyword_report</strong> CSV (with cluster / page_target fields) to populate this grouped view.
+          </div>
+        ) : (
+          Array.from(groupedPlanner.entries()).map(([cluster, ptMap]) => {
+            const totalInCluster = Array.from(ptMap.values()).reduce((sum, g) => sum + g.keywords.length, 0);
+            return (
+              <details key={cluster} style={{ marginBottom: '1rem', border: '1px solid var(--card-border)', borderRadius: '10px', overflow: 'hidden', background: 'var(--card)' }}>
+                <summary style={{ padding: '0.75rem 1rem', cursor: 'pointer', fontWeight: 600, background: 'var(--card)', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>📁 Cluster: {cluster}</span>
+                  <span style={{ fontSize: '0.875rem', color: 'var(--muted)', fontWeight: 400 }}>{totalInCluster} keywords</span>
+                </summary>
+                <div style={{ padding: '1rem' }}>
+                  {Array.from(ptMap.entries()).map(([pageTarget, { meta, keywords }]) => (
+                    <details key={pageTarget} style={{ marginBottom: '0.75rem', border: '1px solid var(--card-border)', borderRadius: '8px', background: 'var(--bg, #0a0a0a)' }}>
+                      <summary style={{ padding: '0.6rem 0.9rem', cursor: 'pointer', fontWeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span>🎯 Page Target: {pageTarget}</span>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{keywords.length} kw</span>
+                      </summary>
+                      <div style={{ padding: '0.9rem', fontSize: '0.875rem', borderTop: '1px solid var(--card-border)' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.4rem 1rem', marginBottom: '0.75rem' }}>
+                          <div><strong>Priority:</strong> {meta.priority}</div>
+                          <div><strong>SV Tag:</strong> {meta.serpvault_tag}</div>
+                          <div><strong>Intent:</strong> {meta.intent}</div>
+                          <div><strong>Domain:</strong> {meta.domain}</div>
+                          <div><strong>Location:</strong> {meta.location}</div>
+                          <div><strong>Niche:</strong> {meta.niche}</div>
+                        </div>
+                        <div style={{ marginBottom: '0.35rem', fontWeight: 500 }}>Keywords:</div>
+                        <ul style={{ margin: 0, paddingLeft: '1.1rem', lineHeight: 1.5 }}>
+                          {keywords.map((k) => (
+                            <li key={k.id}>{k.keyword}{k.volume != null ? ` (${k.volume.toLocaleString()})` : ''}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </details>
+                  ))}
+                </div>
+              </details>
+            );
+          })
+        )}
       </div>
 
       {loading ? (
