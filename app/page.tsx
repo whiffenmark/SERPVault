@@ -35,6 +35,7 @@ export default function DashboardPage() {
   }, []);
 
   const scopedKeywords = filterRowsBySite(keywords, selectedSite);
+  const scopedBacklinks = filterRowsBySite(backlinks, selectedSite);
   const scopedGaps = filterRowsBySite(gaps, selectedSite);
   const scopedCompetitors = filterRowsBySite(competitors, selectedSite);
   const tagged = scopedKeywords.filter((k) => k.tag && k.tag !== 'Ignore');
@@ -74,7 +75,7 @@ export default function DashboardPage() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
         <Card title="Total Uploads" value={loading ? '…' : uploads.length} sub="CSV files imported" />
         <Card title="Keywords" value={loading ? '…' : scopedKeywords.length} sub={selectedSite ? 'in active project' : 'across all reports'} />
-        <Card title="Backlinks" value={loading ? '…' : backlinks.length} sub="across all reports" />
+        <Card title="Backlinks" value={loading ? '…' : scopedBacklinks.length} sub={selectedSite ? 'in active project' : 'across all reports'} />
         <Card title="Competitor Pages" value={loading ? '…' : scopedCompetitors.length} sub={selectedSite ? 'in active project' : 'indexed'} />
         <Card title="Keyword Gaps" value={loading ? '…' : scopedGaps.length} sub={selectedSite ? 'in active project' : 'gap opportunities'} />
         <Card title="Tagged Rows" value={loading ? '…' : tagged.length} sub="items tagged" accent />

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { updateStore } from '@/lib/storage';
+import { updateStore, getSelectedSite, filterRowsBySite, siteSelectionLabel, type SiteSelection } from '@/lib/storage';
 import * as db from '@/lib/db';
 import type { BacklinkRecord, Tag } from '@/lib/types';
 import DataTable from '@/components/DataTable';
@@ -11,9 +11,11 @@ import type { Column } from '@/components/DataTable';
 
 export default function BacklinksPage() {
   const [rows, setRows] = useState<BacklinkRecord[]>([]);
+  const [selectedSite, setSelectedSite] = useState<SiteSelection>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    setSelectedSite(getSelectedSite());
     db.getBacklinks().then(setRows).finally(() => setLoading(false));
   }, []);
 
@@ -23,8 +25,10 @@ export default function BacklinksPage() {
     await db.updateTag('backlinks', id, tag);
   }, []);
 
-  const avgDA = rows.length
-    ? Math.round(rows.reduce((s, r) => s + (r.domainAuthority ?? r.domainRating ?? 0), 0) / rows.length)
+  const displayedBacklinks = filterRowsBySite(rows, selectedSite);
+
+  const avgDA = displayedBacklinks.length
+    ? Math.round(displayedBacklinks.reduce((s, r) => s + (r.domainAuthority ?? r.domainRating ?? 0), 0) / displayedBacklinks.length)
     : 0;
 
   const columns: Column<BacklinkRecord>[] = [
@@ -60,20 +64,37 @@ export default function BacklinksPage() {
         <h1 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.3rem' }}>Backlink Opportunities</h1>
         <p style={{ color: 'var(--muted)', fontSize: '0.875rem' }}>Tag backlinks as targets to build your link acquisition list.</p>
       </div>
+
+      <div style={{ background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '8px', padding: '0.9rem 1rem', marginBottom: '1.5rem' }}>
+        <div style={{ fontSize: '0.72rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>
+          Active Project / Site
+        </div>
+        <div style={{ fontSize: '0.95rem', fontWeight: 600 }}>{siteSelectionLabel(selectedSite)}</div>
+        <div style={{ fontSize: '0.78rem', color: 'var(--muted)', marginTop: '0.25rem' }}>
+          This scope filters backlink targets and metrics. All Projects shows the full local dataset.
+        </div>
+      </div>
+
       <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
-        <Card title="Total Backlinks" value={rows.length} />
-        <Card title="DoFollow" value={rows.filter((r) => r.doFollow).length} />
+        <Card title="Total Backlinks" value={displayedBacklinks.length} />
+        <Card title="DoFollow" value={displayedBacklinks.filter((r) => r.doFollow).length} />
         <Card title="Avg DA" value={avgDA} />
-        <Card title="Tagged Targets" value={rows.filter((r) => r.tag === 'Backlink Target').length} accent />
+        <Card title="Tagged Targets" value={displayedBacklinks.filter((r) => r.tag === 'Backlink Target').length} accent />
       </div>
       {loading ? (
         <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>Loading…</div>
-      ) : rows.length === 0 ? (
-        <div style={{ background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>
-          No backlinks yet. <a href="/upload" style={{ color: 'var(--accent)' }}>Upload a backlink CSV</a> to get started.
-        </div>
+      ) : displayedBacklinks.length === 0 ? (
+        selectedSite ? (
+          <div style={{ background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>
+            No backlinks match the active project/site.
+          </div>
+        ) : (
+          <div style={{ background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>
+            No backlinks yet. <a href="/upload" style={{ color: 'var(--accent)' }}>Upload a backlink CSV</a> to get started.
+          </div>
+        )
       ) : (
-        <DataTable columns={columns} rows={rows} onTagChange={handleTagChange} />
+        <DataTable columns={columns} rows={displayedBacklinks} onTagChange={handleTagChange} />
       )}
     </div>
   );

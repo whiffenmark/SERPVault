@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { updateStore } from '@/lib/storage';
+import { updateStore, getSelectedSite, filterRowsBySite, siteSelectionLabel, type SiteSelection } from '@/lib/storage';
 import * as db from '@/lib/db';
 import type { CompetitorPageRecord, Tag } from '@/lib/types';
 import DataTable from '@/components/DataTable';
@@ -11,9 +11,11 @@ import type { Column } from '@/components/DataTable';
 
 export default function CompetitorPagesPage() {
   const [rows, setRows] = useState<CompetitorPageRecord[]>([]);
+  const [selectedSite, setSelectedSite] = useState<SiteSelection>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    setSelectedSite(getSelectedSite());
     db.getCompetitorPages().then(setRows).finally(() => setLoading(false));
   }, []);
 
@@ -23,7 +25,9 @@ export default function CompetitorPagesPage() {
     await db.updateTag('competitor_pages', id, tag);
   }, []);
 
-  const totalTraffic = rows.reduce((s, r) => s + (r.traffic ?? 0), 0);
+  const displayedPages = filterRowsBySite(rows, selectedSite);
+
+  const totalTraffic = displayedPages.reduce((s, r) => s + (r.traffic ?? 0), 0);
 
   const columns: Column<CompetitorPageRecord>[] = [
     { key: 'domain', label: 'Domain', sortKey: (r) => r.domain },
@@ -49,20 +53,37 @@ export default function CompetitorPagesPage() {
         <h1 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.3rem' }}>Competitor Top Pages</h1>
         <p style={{ color: 'var(--muted)', fontSize: '0.875rem' }}>Analyze competitor pages to find content gaps and backlink opportunities.</p>
       </div>
+
+      <div style={{ background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '8px', padding: '0.9rem 1rem', marginBottom: '1.5rem' }}>
+        <div style={{ fontSize: '0.72rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>
+          Active Project / Site
+        </div>
+        <div style={{ fontSize: '0.95rem', fontWeight: 600 }}>{siteSelectionLabel(selectedSite)}</div>
+        <div style={{ fontSize: '0.78rem', color: 'var(--muted)', marginTop: '0.25rem' }}>
+          This scope filters competitor top pages and metrics. All Projects shows the full local dataset.
+        </div>
+      </div>
+
       <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
-        <Card title="Pages Indexed" value={rows.length} />
+        <Card title="Pages Indexed" value={displayedPages.length} />
         <Card title="Total Traffic" value={totalTraffic.toLocaleString()} />
-        <Card title="Unique Domains" value={new Set(rows.map((r) => r.domain)).size} />
-        <Card title="Tagged" value={rows.filter((r) => r.tag).length} accent />
+        <Card title="Unique Domains" value={new Set(displayedPages.map((r) => r.domain)).size} />
+        <Card title="Tagged" value={displayedPages.filter((r) => r.tag).length} accent />
       </div>
       {loading ? (
         <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>Loading…</div>
-      ) : rows.length === 0 ? (
-        <div style={{ background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>
-          No competitor pages yet. <a href="/upload" style={{ color: 'var(--accent)' }}>Upload a top pages CSV</a> to get started.
-        </div>
+      ) : displayedPages.length === 0 ? (
+        selectedSite ? (
+          <div style={{ background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>
+            No competitor pages match the active project/site.
+          </div>
+        ) : (
+          <div style={{ background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>
+            No competitor pages yet. <a href="/upload" style={{ color: 'var(--accent)' }}>Upload a top pages CSV</a> to get started.
+          </div>
+        )
       ) : (
-        <DataTable columns={columns} rows={rows} onTagChange={handleTagChange} />
+        <DataTable columns={columns} rows={displayedPages} onTagChange={handleTagChange} />
       )}
     </div>
   );
