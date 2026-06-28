@@ -18,6 +18,41 @@ export default function ProjectSiteSelector() {
   const [domain, setDomain] = useState('');
   const [location, setLocation] = useState('');
   const [niche, setNiche] = useState('');
+  const [isManualOverride, setIsManualOverride] = useState(false);
+
+  const knownDomains = Array.from(
+    new Set(
+      options
+        .map((opt) => opt.site?.domain)
+        .filter((d): d is string => !!d && d !== '-')
+    )
+  ).sort((a, b) => a.localeCompare(b));
+
+  const handleDomainSelect = (selectedDomain: string) => {
+    setDomain(selectedDomain);
+
+    // Find available locations and niches for the selected domain
+    const availableLocs = options
+      .filter((opt) => opt.site?.domain === selectedDomain)
+      .map((opt) => opt.site?.location)
+      .filter((l): l is string => !!l);
+    const availableNiches = options
+      .filter((opt) => opt.site?.domain === selectedDomain)
+      .map((opt) => opt.site?.niche)
+      .filter((n): n is string => !!n);
+
+    // Set default location/niche if not already valid/compatible
+    if (location !== '-' && !availableLocs.includes(location)) {
+      setLocation('-');
+    }
+    if (niche !== '-' && !availableNiches.includes(niche)) {
+      setNiche('-');
+    }
+  };
+
+  const isSaveDisabled = !isManualOverride
+    ? (!domain || !knownDomains.includes(domain))
+    : !domain.trim();
 
   useEffect(() => {
     const s = getSelectedSite();
@@ -154,7 +189,11 @@ export default function ProjectSiteSelector() {
       {/* Small Manage/Advanced button - opens modal */}
       <div style={{ marginTop: '0.35rem' }}>
         <button
-          onClick={() => setShowModal(true)}
+          onClick={() => {
+            const isManual = selected ? !knownDomains.includes(selected.domain) : false;
+            setIsManualOverride(isManual);
+            setShowModal(true);
+          }}
           style={{
             fontSize: '0.6rem',
             color: 'var(--accent)',
@@ -202,47 +241,187 @@ export default function ProjectSiteSelector() {
           >
             <div style={{ fontWeight: 600, marginBottom: '0.75rem', fontSize: '0.95rem' }}>Advanced Project / Site Filter</div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <input
-                type="text"
-                placeholder="Domain (e.g. example.com)"
-                value={domain}
-                onChange={(e) => setDomain(e.target.value)}
-                style={{ fontSize: '0.8rem', padding: '0.45rem 0.6rem', border: '1px solid var(--card-border)', borderRadius: '6px', background: 'var(--background)' }}
-              />
-              <input
-                type="text"
-                placeholder="Location / Country"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                style={{ fontSize: '0.8rem', padding: '0.45rem 0.6rem', border: '1px solid var(--card-border)', borderRadius: '6px', background: 'var(--background)' }}
-              />
-              <input
-                type="text"
-                placeholder="Niche"
-                value={niche}
-                onChange={(e) => setNiche(e.target.value)}
-                style={{ fontSize: '0.8rem', padding: '0.45rem 0.6rem', border: '1px solid var(--card-border)', borderRadius: '6px', background: 'var(--background)' }}
-              />
+            {!isManualOverride ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <label style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--muted)' }}>Domain</label>
+                  <select
+                    value={knownDomains.includes(domain) ? domain : ''}
+                    onChange={(e) => handleDomainSelect(e.target.value)}
+                    style={{
+                      fontSize: '0.8rem',
+                      padding: '0.45rem 0.6rem',
+                      border: '1px solid var(--card-border)',
+                      borderRadius: '6px',
+                      background: 'var(--background)',
+                      color: 'var(--foreground)',
+                      cursor: 'pointer',
+                      width: '100%',
+                    }}
+                  >
+                    <option value="" disabled>Select domain</option>
+                    {knownDomains.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {domain && knownDomains.includes(domain) ? (
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                      <label style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--muted)' }}>Location / Country</label>
+                      <select
+                        value={location}
+                        onChange={(e) => setLocation(e.target.value)}
+                        style={{
+                          fontSize: '0.8rem',
+                          padding: '0.45rem 0.6rem',
+                          border: '1px solid var(--card-border)',
+                          borderRadius: '6px',
+                          background: 'var(--background)',
+                          color: 'var(--foreground)',
+                          cursor: 'pointer',
+                          width: '100%',
+                        }}
+                      >
+                        <option value="-">Any location</option>
+                        {Array.from(
+                          new Set(
+                            options
+                              .filter((opt) => opt.site?.domain === domain)
+                              .map((opt) => opt.site?.location)
+                              .filter((l): l is string => !!l && l !== '-')
+                          )
+                        ).sort((a, b) => a.localeCompare(b)).map((loc) => (
+                          <option key={loc} value={loc}>
+                            {loc}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                      <label style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--muted)' }}>Niche</label>
+                      <select
+                        value={niche}
+                        onChange={(e) => setNiche(e.target.value)}
+                        style={{
+                          fontSize: '0.8rem',
+                          padding: '0.45rem 0.6rem',
+                          border: '1px solid var(--card-border)',
+                          borderRadius: '6px',
+                          background: 'var(--background)',
+                          color: 'var(--foreground)',
+                          cursor: 'pointer',
+                          width: '100%',
+                        }}
+                      >
+                        <option value="-">Any niche</option>
+                        {Array.from(
+                          new Set(
+                            options
+                              .filter((opt) => opt.site?.domain === domain)
+                              .map((opt) => opt.site?.niche)
+                              .filter((n): n is string => !!n && n !== '-')
+                          )
+                        ).sort((a, b) => a.localeCompare(b)).map((nich) => (
+                          <option key={nich} value={nich}>
+                            {nich}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '0.7rem', color: 'var(--muted)', fontStyle: 'italic', marginTop: '0.25rem' }}>
+                    Please select a domain to configure location and niche filters.
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <div style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--accent)', marginBottom: '0.25rem' }}>
+                  Manual Override Mode
+                </div>
+                <input
+                  type="text"
+                  placeholder="Domain (e.g. example.com)"
+                  value={domain === '-' ? '' : domain}
+                  onChange={(e) => setDomain(e.target.value)}
+                  style={{ fontSize: '0.8rem', padding: '0.45rem 0.6rem', border: '1px solid var(--card-border)', borderRadius: '6px', background: 'var(--background)', color: 'var(--foreground)' }}
+                />
+                <input
+                  type="text"
+                  placeholder="Location / Country"
+                  value={location === '-' ? '' : location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  style={{ fontSize: '0.8rem', padding: '0.45rem 0.6rem', border: '1px solid var(--card-border)', borderRadius: '6px', background: 'var(--background)', color: 'var(--foreground)' }}
+                />
+                <input
+                  type="text"
+                  placeholder="Niche"
+                  value={niche === '-' ? '' : niche}
+                  onChange={(e) => setNiche(e.target.value)}
+                  style={{ fontSize: '0.8rem', padding: '0.45rem 0.6rem', border: '1px solid var(--card-border)', borderRadius: '6px', background: 'var(--background)', color: 'var(--foreground)' }}
+                />
+              </div>
+            )}
+
+            <div style={{ marginTop: '1rem', paddingTop: '0.75rem', borderTop: '1px dashed var(--card-border)' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.7rem', color: 'var(--muted)', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={isManualOverride}
+                  onChange={(e) => {
+                    setIsManualOverride(e.target.checked);
+                    if (!e.target.checked) {
+                      if (selected && knownDomains.includes(selected.domain)) {
+                        setDomain(selected.domain);
+                        setLocation(selected.location);
+                        setNiche(selected.niche);
+                      } else {
+                        setDomain('');
+                        setLocation('');
+                        setNiche('');
+                      }
+                    }
+                  }}
+                  style={{ cursor: 'pointer' }}
+                />
+                Enable manual override (for custom/unlisted domains)
+              </label>
             </div>
 
             <div style={{ display: 'flex', gap: '0.6rem', marginTop: '1rem' }}>
               <button
+                disabled={isSaveDisabled}
                 onClick={saveManual}
-                style={{ flex: 1, fontSize: '0.8rem', padding: '0.5rem', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 500 }}
+                style={{
+                  flex: 1,
+                  fontSize: '0.8rem',
+                  padding: '0.5rem',
+                  background: isSaveDisabled ? 'var(--card-border)' : 'var(--accent)',
+                  color: isSaveDisabled ? 'var(--muted)' : '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: isSaveDisabled ? 'not-allowed' : 'pointer',
+                  fontWeight: 500
+                }}
               >
                 Save & Filter
               </button>
               <button
                 onClick={() => setShowModal(false)}
-                style={{ fontSize: '0.8rem', padding: '0.5rem', background: 'transparent', border: '1px solid var(--card-border)', borderRadius: '6px', cursor: 'pointer' }}
+                style={{ fontSize: '0.8rem', padding: '0.5rem', background: 'transparent', border: '1px solid var(--card-border)', color: 'var(--foreground)', borderRadius: '6px', cursor: 'pointer' }}
               >
                 Cancel
               </button>
             </div>
 
             <div style={{ marginTop: '0.75rem', fontSize: '0.65rem', color: 'var(--muted)', lineHeight: 1.4 }}>
-              Manual entry overrides the dropdown. Values are matched against uploaded CSV fields (domain, location/country, niche). Use “All Projects” in the sidebar dropdown for no filter.
+              Values are matched against uploaded CSV fields (domain, location/country, niche). Use “All Projects” in the sidebar dropdown for no filter.
             </div>
           </div>
         </div>
