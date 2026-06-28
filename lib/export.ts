@@ -27,7 +27,11 @@ function download(content: string, filename: string, mime = 'text/csv') {
   URL.revokeObjectURL(url);
 }
 
-export function exportKeywordsCSV(rows: KeywordRecord[]): void {
+function scopedFilename(base: string, extension: string, scopeSlug?: string): string {
+  return `${base}-${scopeSlug || 'all-projects'}.${extension}`;
+}
+
+export function exportKeywordsCSV(rows: KeywordRecord[], scopeSlug?: string): void {
   const data = rows.map((r) => ({
     Keyword: r.keyword,
     Volume: r.volume ?? '',
@@ -37,10 +41,10 @@ export function exportKeywordsCSV(rows: KeywordRecord[]): void {
     Tag: r.tag ?? '',
     'Opportunity Score': r.opportunityScore ?? '',
   }));
-  download(toCSV(data), 'serpvault-keywords.csv');
+  download(toCSV(data), scopedFilename('serpvault-keywords', 'csv', scopeSlug));
 }
 
-export function exportBacklinksCSV(rows: BacklinkRecord[]): void {
+export function exportBacklinksCSV(rows: BacklinkRecord[], scopeSlug?: string): void {
   const data = rows.map((r) => ({
     'Source URL': r.sourceUrl,
     'Target URL': r.targetUrl,
@@ -50,10 +54,10 @@ export function exportBacklinksCSV(rows: BacklinkRecord[]): void {
     Tag: r.tag ?? '',
     'Opportunity Score': r.opportunityScore ?? '',
   }));
-  download(toCSV(data), 'serpvault-backlinks.csv');
+  download(toCSV(data), scopedFilename('serpvault-backlinks', 'csv', scopeSlug));
 }
 
-export function exportContentPlanCSV(rows: KeywordRecord[]): void {
+export function exportContentPlanCSV(rows: KeywordRecord[], scopeSlug?: string): void {
   const tagged = rows.filter((r) => r.tag && r.tag !== 'Ignore');
   const data = tagged.map((r) => ({
     Keyword: r.keyword,
@@ -64,10 +68,10 @@ export function exportContentPlanCSV(rows: KeywordRecord[]): void {
     'Opportunity Score': r.opportunityScore ?? '',
     'Target URL': r.url ?? '',
   }));
-  download(toCSV(data), 'serpvault-content-plan.csv');
+  download(toCSV(data), scopedFilename('serpvault-content-plan', 'csv', scopeSlug));
 }
 
-export function exportBacklinkTargetsCSV(rows: BacklinkRecord[]): void {
+export function exportBacklinkTargetsCSV(rows: BacklinkRecord[], scopeSlug?: string): void {
   const tagged = rows.filter((r) => r.tag === 'Backlink Target');
   const data = tagged.map((r) => ({
     'Source URL': r.sourceUrl,
@@ -75,13 +79,15 @@ export function exportBacklinkTargetsCSV(rows: BacklinkRecord[]): void {
     DA: r.domainAuthority ?? '',
     'Opportunity Score': r.opportunityScore ?? '',
   }));
-  download(toCSV(data), 'serpvault-backlink-targets.csv');
+  download(toCSV(data), scopedFilename('serpvault-backlink-targets', 'csv', scopeSlug));
 }
 
 export function exportActionPlanMD(
   keywords: KeywordRecord[],
   backlinks: BacklinkRecord[],
-  competitors: CompetitorPageRecord[]
+  competitors: CompetitorPageRecord[],
+  scopeLabel = 'All Projects',
+  scopeSlug?: string
 ): void {
   const date = new Date().toLocaleDateString();
   const topKw = [...keywords]
@@ -97,6 +103,8 @@ export function exportActionPlanMD(
 
   const lines: string[] = [
     `# SERPVault Action Plan — ${date}`,
+    '',
+    `**Export Scope:** ${scopeLabel}`,
     '',
     '## Top Keyword Opportunities',
     '',
@@ -123,7 +131,7 @@ export function exportActionPlanMD(
     ...topComp.map((r) => `| ${r.url} | ${r.traffic ?? '-'} | ${r.keywords ?? '-'} |`),
   ];
 
-  download(lines.join('\n'), 'serpvault-action-plan.md', 'text/markdown');
+  download(lines.join('\n'), scopedFilename('serpvault-action-plan', 'md', scopeSlug), 'text/markdown');
 }
 
 function getHermesField(raw: Record<string, string>, ...keys: string[]): string {
@@ -134,7 +142,7 @@ function getHermesField(raw: Record<string, string>, ...keys: string[]): string 
   return '-';
 }
 
-export function exportHermesContentPlanCSV(rows: KeywordRecord[]): void {
+export function exportHermesContentPlanCSV(rows: KeywordRecord[], scopeSlug?: string): void {
   const hermesRows = rows.filter((k) => {
     const r = k.raw || {};
     return !!(r.cluster || r.Cluster || r['Cluster'] || r.page_target || r['page target'] || r.pageTarget);
@@ -155,21 +163,21 @@ export function exportHermesContentPlanCSV(rows: KeywordRecord[]): void {
   });
   if (data.length === 0) {
     // still download empty? or handled in UI; per task, empty state in page
-    download('keyword,cluster,page_target,priority,serpvault_tag,intent,domain,location,niche\n', 'hermes-content-plan.csv');
+    download('keyword,cluster,page_target,priority,serpvault_tag,intent,domain,location,niche\n', scopedFilename('hermes-content-plan', 'csv', scopeSlug));
     return;
   }
-  download(toCSV(data), 'hermes-content-plan.csv');
+  download(toCSV(data), scopedFilename('hermes-content-plan', 'csv', scopeSlug));
 }
 
-export function exportHermesContentPlanMD(rows: KeywordRecord[]): void {
+export function exportHermesContentPlanMD(rows: KeywordRecord[], scopeLabel = 'All Projects', scopeSlug?: string): void {
   const hermesRows = rows.filter((k) => {
     const r = k.raw || {};
     return !!(r.cluster || r.Cluster || r['Cluster'] || r.page_target || r['page target'] || r.pageTarget);
   });
   const date = new Date().toLocaleDateString();
   if (hermesRows.length === 0) {
-    const md = `# Hermes Content Plan — ${date}\n\nNo Hermes keyword data found. Upload a Hermes keyword_report CSV with cluster/page_target fields.`;
-    download(md, 'hermes-content-plan.md', 'text/markdown');
+    const md = `# Hermes Content Plan — ${date}\n\n**Export Scope:** ${scopeLabel}\n\nNo Hermes keyword data found. Upload a Hermes keyword_report CSV with cluster/page_target fields.`;
+    download(md, scopedFilename('hermes-content-plan', 'md', scopeSlug), 'text/markdown');
     return;
   }
 
@@ -200,6 +208,8 @@ export function exportHermesContentPlanMD(rows: KeywordRecord[]): void {
   const lines: string[] = [
     `# Hermes Content Plan — ${date}`,
     '',
+    `**Export Scope:** ${scopeLabel}`,
+    '',
   ];
   for (const [cluster, ptMap] of clusterMap.entries()) {
     const total = Array.from(ptMap.values()).reduce((s, g) => s + g.keywords.length, 0);
@@ -224,5 +234,5 @@ export function exportHermesContentPlanMD(rows: KeywordRecord[]): void {
     }
   }
 
-  download(lines.join('\n'), 'hermes-content-plan.md', 'text/markdown');
+  download(lines.join('\n'), scopedFilename('hermes-content-plan', 'md', scopeSlug), 'text/markdown');
 }

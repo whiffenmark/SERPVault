@@ -1,7 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import * as db from '@/lib/db';
+import {
+  filterRowsBySite,
+  getSelectedSite,
+  siteSelectionLabel,
+  siteSelectionSlug,
+  type SiteSelection,
+} from '@/lib/storage';
 import {
   exportKeywordsCSV,
   exportBacklinksCSV,
@@ -15,6 +22,47 @@ import {
 export default function ExportPage() {
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState('');
+  const [selectedSite, setSelectedSiteState] = useState<SiteSelection>(null);
+  const [counts, setCounts] = useState({
+    keywords: 'Loading...',
+    backlinks: 'Loading...',
+    taggedKeywords: 'Loading...',
+    hermesKeywords: 'Loading...',
+    backlinkTargets: 'Loading...',
+  });
+
+  useEffect(() => {
+    const site = getSelectedSite();
+    setSelectedSiteState(site);
+
+    Promise.all([db.getKeywords(), db.getBacklinks()]).then(([kws, bls]) => {
+      const scopedKeywords = filterRowsBySite(kws, site);
+      const scopedBacklinks = filterRowsBySite(bls, site);
+      const hermes = scopedKeywords.filter((k) => {
+        const r = k.raw || {};
+        return !!(r.cluster || r.Cluster || r['Cluster'] || r.page_target || r['page target'] || r.pageTarget);
+      });
+
+      setCounts({
+        keywords: `${scopedKeywords.length.toLocaleString()} keywords`,
+        backlinks: `${scopedBacklinks.length.toLocaleString()} backlinks`,
+        taggedKeywords: `${scopedKeywords.filter((k) => k.tag && k.tag !== 'Ignore').length.toLocaleString()} tagged keywords`,
+        hermesKeywords: hermes.length > 0 ? `${hermes.length.toLocaleString()} Hermes keywords` : 'No Hermes data',
+        backlinkTargets: `${scopedBacklinks.filter((b) => b.tag === 'Backlink Target').length.toLocaleString()} targets`,
+      });
+    });
+  }, []);
+
+  const scopeLabel = siteSelectionLabel(selectedSite);
+  const scopeSlug = siteSelectionSlug(selectedSite);
+
+  async function scopedKeywords() {
+    return filterRowsBySite(await db.getKeywords(), selectedSite);
+  }
+
+  async function scopedBacklinks() {
+    return filterRowsBySite(await db.getBacklinks(), selectedSite);
+  }
 
   async function run(label: string, fn: () => Promise<void>) {
     setBusy(label);
@@ -33,63 +81,43 @@ export default function ExportPage() {
       title: 'All Keywords CSV',
       icon: '◈',
       description: 'Every keyword with volume, KD, CPC, intent, tag, and opportunity score.',
-      action: () => run('kw', async () => exportKeywordsCSV(await db.getKeywords())),
-      countFn: async () => `${(await db.getKeywords()).length.toLocaleString()} keywords`,
+      count: counts.keywords,
+      action: () => run('kw', async () => exportKeywordsCSV(await scopedKeywords(), scopeSlug)),
     },
     {
       title: 'All Backlinks CSV',
       icon: '⛓',
       description: 'Every backlink with source/target URLs, anchor text, DA, tag, and score.',
-      action: () => run('bl', async () => exportBacklinksCSV(await db.getBacklinks())),
-      countFn: async () => `${(await db.getBacklinks()).length.toLocaleString()} backlinks`,
+      count: counts.backlinks,
+      action: () => run('bl', async () => exportBacklinksCSV(await scopedBacklinks(), scopeSlug)),
     },
     {
       title: 'Content Plan CSV',
       icon: '✎',
       description: 'Only tagged (non-Ignore) keywords as a prioritized content calendar.',
-      action: () => run('cp', async () => exportContentPlanCSV(await db.getKeywords())),
-      countFn: async () => {
-        const kws = await db.getKeywords();
-        return `${kws.filter((k) => k.tag && k.tag !== 'Ignore').length.toLocaleString()} tagged keywords`;
-      },
+      count: counts.taggedKeywords,
+      action: () => run('cp', async () => exportContentPlanCSV(await scopedKeywords(), scopeSlug)),
     },
     {
       title: 'Hermes Content Plan CSV',
       icon: '📋',
       description: 'Hermes keyword_report data (cluster/page_target) exported as CSV. Uses only existing keyword data with safe raw fallbacks.',
-      action: () => run('hcsv', async () => exportHermesContentPlanCSV(await db.getKeywords())),
-      countFn: async () => {
-        const kws = await db.getKeywords();
-        const hermes = kws.filter((k) => {
-          const r = k.raw || {};
-          return !!(r.cluster || r.Cluster || r['Cluster'] || r.page_target || r['page target'] || r.pageTarget);
-        });
-        return hermes.length > 0 ? `${hermes.length.toLocaleString()} Hermes keywords` : 'No Hermes data';
-      },
+      count: counts.hermesKeywords,
+      action: () => run('hcsv', async () => exportHermesContentPlanCSV(await scopedKeywords(), scopeSlug)),
     },
     {
       title: 'Hermes Content Plan Markdown',
       icon: '📝',
       description: 'Grouped Cluster → Page Target Markdown matching the Hermes planner view. Helpful empty state included when no data.',
-      action: () => run('hmd', async () => exportHermesContentPlanMD(await db.getKeywords())),
-      countFn: async () => {
-        const kws = await db.getKeywords();
-        const hermes = kws.filter((k) => {
-          const r = k.raw || {};
-          return !!(r.cluster || r.Cluster || r['Cluster'] || r.page_target || r['page target'] || r.pageTarget);
-        });
-        return hermes.length > 0 ? `${hermes.length.toLocaleString()} Hermes keywords` : 'No Hermes data';
-      },
+      count: counts.hermesKeywords,
+      action: () => run('hmd', async () => exportHermesContentPlanMD(await scopedKeywords(), scopeLabel, scopeSlug)),
     },
     {
       title: 'Backlink Targets CSV',
       icon: '🎯',
       description: 'Rows tagged as "Backlink Target" — your link acquisition hit list.',
-      action: () => run('bt', async () => exportBacklinkTargetsCSV(await db.getBacklinks())),
-      countFn: async () => {
-        const bls = await db.getBacklinks();
-        return `${bls.filter((b) => b.tag === 'Backlink Target').length.toLocaleString()} targets`;
-      },
+      count: counts.backlinkTargets,
+      action: () => run('bt', async () => exportBacklinkTargetsCSV(await scopedBacklinks(), scopeSlug)),
     },
     {
       title: 'Action Plan Markdown',
@@ -97,9 +125,15 @@ export default function ExportPage() {
       description: 'Formatted Markdown action plan with top keywords, backlinks, and competitor pages.',
       action: () => run('md', async () => {
         const [kws, bls, cps] = await Promise.all([db.getKeywords(), db.getBacklinks(), db.getCompetitorPages()]);
-        exportActionPlanMD(kws, bls, cps);
+        exportActionPlanMD(
+          filterRowsBySite(kws, selectedSite),
+          filterRowsBySite(bls, selectedSite),
+          filterRowsBySite(cps, selectedSite),
+          scopeLabel,
+          scopeSlug
+        );
       }),
-      countFn: async () => 'Full action plan',
+      count: 'Full action plan',
     },
   ];
 
@@ -108,6 +142,15 @@ export default function ExportPage() {
       <div style={{ marginBottom: '1.75rem' }}>
         <h1 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.3rem' }}>Export Center</h1>
         <p style={{ color: 'var(--muted)', fontSize: '0.875rem' }}>Download cleaned CSVs, content plans, and action plans from your stored data.</p>
+      </div>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '8px', padding: '0.9rem 1rem', marginBottom: '1.25rem' }}>
+        <div style={{ fontSize: '0.72rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>
+          Export scope
+        </div>
+        <div style={{ fontSize: '0.95rem', fontWeight: 600 }}>{scopeLabel}</div>
+        <div style={{ fontSize: '0.78rem', color: 'var(--muted)', marginTop: '0.25rem' }}>
+          The selected Project / Site controls keyword, content, and action plan exports. All Projects exports everything.
+        </div>
       </div>
       {message && (
         <div style={{ background: '#10b98120', border: '1px solid #10b98150', borderRadius: '8px', padding: '0.75rem 1rem', marginBottom: '1.25rem', fontSize: '0.875rem', color: 'var(--success)' }}>
@@ -122,6 +165,7 @@ export default function ExportPage() {
               <div>
                 <div style={{ fontWeight: 600, fontSize: '0.95rem', marginBottom: '0.25rem' }}>{card.title}</div>
                 <div style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>{card.description}</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--accent)', marginTop: '0.35rem', fontWeight: 600 }}>{card.count}</div>
               </div>
             </div>
             <button

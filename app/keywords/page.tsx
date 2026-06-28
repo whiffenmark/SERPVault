@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { updateStore, getSelectedSite } from '@/lib/storage';
+import { updateStore, getSelectedSite, filterRowsBySite } from '@/lib/storage';
 import * as db from '@/lib/db';
 import type { KeywordRecord, Tag } from '@/lib/types';
 import DataTable from '@/components/DataTable';
@@ -84,19 +84,7 @@ export default function KeywordsPage() {
   };
 
   const filteredKeywords = useMemo(() => {
-    let result = keywords;
-    const site = getSelectedSite();
-    if (site) {
-      result = result.filter((k) => {
-        const d = getVal(k, "domain");
-        const l = getVal(k, "location");
-        const n = getVal(k, "niche");
-        const matchD = !site.domain || site.domain === "-" || d === site.domain;
-        const matchL = !site.location || site.location === "-" || l === site.location;
-        const matchN = !site.niche || site.niche === "-" || n === site.niche;
-        return matchD && matchL && matchN;
-      });
-    }
+    let result = filterRowsBySite(keywords, getSelectedSite());
     if (keywordSearch) {
       const q = keywordSearch.toLowerCase();
       result = result.filter((k) => k.keyword.toLowerCase().includes(q));

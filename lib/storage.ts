@@ -69,6 +69,14 @@ export type SiteSelection = {
   niche: string;
 } | null;
 
+type SiteScopedRow = {
+  country?: string;
+  database?: string;
+  domain?: string;
+  location?: string;
+  raw?: Record<string, string>;
+};
+
 export function getSelectedSite(): SiteSelection {
   if (typeof window === 'undefined') return null;
   try {
@@ -86,4 +94,66 @@ export function setSelectedSite(site: SiteSelection): void {
   } else {
     localStorage.removeItem(SITE_KEY);
   }
+}
+
+function normalizeScopeValue(value?: string): string {
+  const trimmed = value?.toString().trim();
+  return trimmed || '-';
+}
+
+function firstScopeValue(row: SiteScopedRow, keys: string[], fallbacks: Array<string | undefined> = []): string {
+  const raw = row.raw || {};
+  for (const key of keys) {
+    const direct = raw[key];
+    if (direct?.toString().trim()) return normalizeScopeValue(direct);
+
+    const match = Object.keys(raw).find((rawKey) => rawKey.toLowerCase() === key.toLowerCase());
+    if (match && raw[match]?.toString().trim()) return normalizeScopeValue(raw[match]);
+  }
+
+  for (const fallback of fallbacks) {
+    if (fallback?.toString().trim()) return normalizeScopeValue(fallback);
+  }
+
+  return '-';
+}
+
+export function getRowSiteScope(row: SiteScopedRow): NonNullable<SiteSelection> {
+  return {
+    domain: firstScopeValue(row, ['domain'], [row.domain]),
+    location: firstScopeValue(row, ['location', 'country', 'database'], [row.location, row.country, row.database]),
+    niche: firstScopeValue(row, ['niche']),
+  };
+}
+
+export function rowMatchesSiteSelection(row: SiteScopedRow, site: SiteSelection): boolean {
+  if (!site) return true;
+
+  const rowScope = getRowSiteScope(row);
+  const matches = (selected: string, actual: string) => {
+    const selectedValue = normalizeScopeValue(selected);
+    return selectedValue === '-' || actual === selectedValue;
+  };
+
+  return (
+    matches(site.domain, rowScope.domain) &&
+    matches(site.location, rowScope.location) &&
+    matches(site.niche, rowScope.niche)
+  );
+}
+
+export function filterRowsBySite<T extends SiteScopedRow>(rows: T[], site: SiteSelection): T[] {
+  return site ? rows.filter((row) => rowMatchesSiteSelection(row, site)) : rows;
+}
+
+export function siteSelectionLabel(site: SiteSelection): string {
+  return site ? `${site.domain} / ${site.location} / ${site.niche}` : 'All Projects';
+}
+
+export function siteSelectionSlug(site: SiteSelection): string {
+  if (!site) return 'all-projects';
+  return [site.domain, site.location, site.niche]
+    .map((part) => normalizeScopeValue(part).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''))
+    .filter(Boolean)
+    .join('-') || 'selected-project';
 }
