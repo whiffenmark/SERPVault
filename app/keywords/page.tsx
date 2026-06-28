@@ -12,6 +12,10 @@ import type { Column } from '@/components/DataTable';
 export default function KeywordsPage() {
   const [keywords, setKeywords] = useState<KeywordRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [keywordSearch, setKeywordSearch] = useState('');
+  const [filters, setFilters] = useState<Record<string, string>>({
+    cluster: '', page_target: '', priority: '', serpvault_tag: '', intent: '', domain: '', location: '', niche: ''
+  });
 
   useEffect(() => {
     db.getKeywords().then(setKeywords).finally(() => setLoading(false));
@@ -63,6 +67,48 @@ export default function KeywordsPage() {
     return clusterMap;
   }, [hermesRows]);
 
+  // Keyword filters & search (PR #6) - minimal addition
+  const getVal = (k: KeywordRecord, field: string): string => {
+    const r = k.raw || {};
+    switch (field) {
+      case 'cluster': return r.cluster ?? r.Cluster ?? r['Cluster'] ?? '-';
+      case 'page_target': return r.page_target ?? r['page target'] ?? r.pageTarget ?? '-';
+      case 'priority': return r.priority ?? r.Priority ?? '-';
+      case 'serpvault_tag': return r.serpvault_tag ?? r['serpvault tag'] ?? r.serpvaultTag ?? '-';
+      case 'intent': return k.intent ?? r.intent ?? r.Intent ?? '-';
+      case 'domain': return r.domain ?? r.Domain ?? '-';
+      case 'location': return r.location ?? r.Location ?? r.country ?? k.country ?? '-';
+      case 'niche': return r.niche ?? r.Niche ?? '-';
+      default: return '-';
+    }
+  };
+
+  const filteredKeywords = useMemo(() => {
+    let result = keywords;
+    if (keywordSearch) {
+      const q = keywordSearch.toLowerCase();
+      result = result.filter((k) => k.keyword.toLowerCase().includes(q));
+    }
+    Object.entries(filters).forEach(([field, val]) => {
+      if (val) {
+        result = result.filter((k) => getVal(k, field) === val);
+      }
+    });
+    return result;
+  }, [keywords, keywordSearch, filters]);
+
+  // Build unique options for each filter (from current keywords)
+  const filterOptions = useMemo(() => {
+    const opts: Record<string, string[]> = {};
+    const fields = ['cluster', 'page_target', 'priority', 'serpvault_tag', 'intent', 'domain', 'location', 'niche'];
+    fields.forEach(f => {
+      const vals = new Set<string>();
+      keywords.forEach(k => { const v = getVal(k, f); if (v !== '-') vals.add(v); });
+      opts[f] = Array.from(vals).sort();
+    });
+    return opts;
+  }, [keywords]);
+
   const columns: Column<KeywordRecord>[] = [
     { key: 'keyword', label: 'Keyword', sortKey: (r) => r.keyword },
     { key: 'volume', label: 'Volume', sortKey: (r) => r.volume ?? 0, render: (r) => r.volume?.toLocaleString() ?? '-' },
@@ -80,6 +126,11 @@ export default function KeywordsPage() {
     { key: 'niche', label: 'Niche', render: (r) => r.raw?.niche ?? r.raw?.Niche ?? '-' },
     { key: 'serpvault_tag_raw', label: 'SV Tag (raw)', render: (r) => r.raw?.serpvault_tag ?? r.raw?.['serpvault tag'] ?? r.raw?.serpvaultTag ?? '-' },
   ];
+
+  const filterLabels: Record<string, string> = {
+    cluster: 'Cluster', page_target: 'Page Target', priority: 'Priority', serpvault_tag: 'SV Tag',
+    intent: 'Intent', domain: 'Domain', location: 'Location', niche: 'Niche'
+  };
 
   return (
     <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
@@ -144,6 +195,45 @@ export default function KeywordsPage() {
         )}
       </div>
 
+      {/* PR #6: Keyword search bar + filters for Hermes fields */}
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem', alignItems: 'center' }}>
+        <input
+          type="text"
+          placeholder="Search keywords…"
+          value={keywordSearch}
+          onChange={(e) => setKeywordSearch(e.target.value)}
+          style={{
+            background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '6px',
+            padding: '0.4rem 0.75rem', color: 'var(--foreground)', fontSize: '0.85rem', width: '220px', outline: 'none'
+          }}
+        />
+        {Object.keys(filters).map((field) => (
+          <select
+            key={field}
+            value={filters[field]}
+            onChange={(e) => setFilters((f) => ({ ...f, [field]: e.target.value }))}
+            style={{
+              background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '6px',
+              padding: '0.4rem 0.5rem', color: 'var(--foreground)', fontSize: '0.8rem', outline: 'none'
+            }}
+          >
+            <option value="">{filterLabels[field]} (all)</option>
+            {filterOptions[field]?.map((opt) => (
+              <option key={opt} value={opt}>{opt}</option>
+            ))}
+          </select>
+        ))}
+        <button
+          onClick={() => { setKeywordSearch(''); setFilters({ cluster: '', page_target: '', priority: '', serpvault_tag: '', intent: '', domain: '', location: '', niche: '' }); }}
+          style={{ padding: '0.35rem 0.6rem', background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '6px', fontSize: '0.75rem', cursor: 'pointer' }}
+        >
+          Clear
+        </button>
+        <span style={{ fontSize: '0.8rem', color: 'var(--muted)', marginLeft: 'auto' }}>
+          {filteredKeywords.length} / {keywords.length} shown
+        </span>
+      </div>
+
       {loading ? (
         <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>Loading…</div>
       ) : keywords.length === 0 ? (
@@ -151,7 +241,7 @@ export default function KeywordsPage() {
           No keywords yet. <a href="/upload" style={{ color: 'var(--accent)' }}>Upload a keyword CSV</a> to get started.
         </div>
       ) : (
-        <DataTable columns={columns} rows={keywords} onTagChange={handleTagChange} />
+        <DataTable columns={columns} rows={filteredKeywords} onTagChange={handleTagChange} />
       )}
     </div>
   );
