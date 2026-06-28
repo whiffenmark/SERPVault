@@ -15,6 +15,7 @@ export default function ContentPage() {
   const [rows, setRows] = useState<ContentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'all' | 'tagged' | 'gap'>('all');
+  const [plannerExpanded, setPlannerExpanded] = useState(false);
 
   useEffect(() => {
     Promise.all([db.getKeywords(), db.getKeywordGaps()]).then(([kws, gaps]) => {
@@ -79,6 +80,19 @@ export default function ContentPage() {
     return clusterMap;
   }, [hermesKeywords]);
 
+  const plannerSummary = useMemo(() => {
+    let clusterCount = groupedContentOpps.size;
+    let pageTargetCount = 0;
+    let keywordCount = 0;
+    for (const ptMap of groupedContentOpps.values()) {
+      pageTargetCount += ptMap.size;
+      for (const data of ptMap.values()) {
+        keywordCount += data.keywords.length;
+      }
+    }
+    return { clusterCount, pageTargetCount, keywordCount };
+  }, [groupedContentOpps]);
+
   function suggestContentType(svTag: string, priority: string, existingTag?: Tag): Tag | '-' {
     if (existingTag) return existingTag;
     const t = (svTag || '').toLowerCase();
@@ -123,45 +137,85 @@ export default function ContentPage() {
       {/* Hermes-style Grouped Content Opportunities - PR #7 */}
       {hermesKeywords.length > 0 && (
         <div style={{ marginBottom: '2rem' }}>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '0.75rem' }}>Hermes Grouped Content Opportunities</h2>
-          {Array.from(groupedContentOpps.entries()).map(([cluster, ptMap]) => {
-            const totalInCluster = Array.from(ptMap.values()).reduce((sum, g) => sum + g.keywords.length, 0);
-            return (
-              <details key={cluster} style={{ marginBottom: '1rem', border: '1px solid var(--card-border)', borderRadius: '10px', overflow: 'hidden', background: 'var(--card)' }}>
-                <summary style={{ padding: '0.75rem 1rem', cursor: 'pointer', fontWeight: 600, background: 'var(--card)', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span>📁 Cluster: {cluster}</span>
-                  <span style={{ fontSize: '0.875rem', color: 'var(--muted)', fontWeight: 400 }}>{totalInCluster} keywords</span>
-                </summary>
-                <div style={{ padding: '1rem' }}>
-                  {Array.from(ptMap.entries()).map(([pageTarget, { meta, keywords }]) => (
-                    <details key={pageTarget} style={{ marginBottom: '0.75rem', border: '1px solid var(--card-border)', borderRadius: '8px', background: 'var(--bg, #0a0a0a)' }}>
-                      <summary style={{ padding: '0.6rem 0.9rem', cursor: 'pointer', fontWeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <span>🎯 Page Target: {pageTarget}</span>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{keywords.length} kw</span>
-                      </summary>
-                      <div style={{ padding: '0.9rem', fontSize: '0.875rem', borderTop: '1px solid var(--card-border)' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.4rem 1rem', marginBottom: '0.75rem' }}>
-                          <div><strong>Priority:</strong> {meta.priority}</div>
-                          <div><strong>SV Tag:</strong> {meta.serpvault_tag}</div>
-                          <div><strong>Intent:</strong> {meta.intent}</div>
-                          <div><strong>Domain:</strong> {meta.domain}</div>
-                          <div><strong>Location:</strong> {meta.location}</div>
-                          <div><strong>Niche:</strong> {meta.niche}</div>
-                          <div><strong>Suggested Type:</strong> {meta.suggestedType}</div>
-                        </div>
-                        <div style={{ marginBottom: '0.35rem', fontWeight: 500 }}>Keywords:</div>
-                        <ul style={{ margin: 0, paddingLeft: '1.1rem', lineHeight: 1.5 }}>
-                          {keywords.map((k: any) => (
-                            <li key={k.id}>{k.keyword}{k.volume != null ? ` (${k.volume.toLocaleString()})` : ''}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    </details>
-                  ))}
-                </div>
-              </details>
-            );
-          })}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 600, margin: 0 }}>Hermes Grouped Content Opportunities</h2>
+              <span style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
+                ({plannerSummary.clusterCount} clusters / {plannerSummary.pageTargetCount} page targets / {plannerSummary.keywordCount} keywords)
+              </span>
+            </div>
+            <button
+              onClick={() => setPlannerExpanded(!plannerExpanded)}
+              style={{
+                padding: '0.35rem 0.65rem',
+                background: 'var(--card)',
+                border: '1px solid var(--card-border)',
+                borderRadius: '6px',
+                fontSize: '0.75rem',
+                cursor: 'pointer',
+                color: 'var(--foreground)',
+                fontWeight: 500,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.25rem',
+                outline: 'none',
+              }}
+            >
+              {plannerExpanded ? 'Hide Opportunities ▲' : 'Show Opportunities ▼'}
+            </button>
+          </div>
+
+          {plannerExpanded && (
+            <div
+              style={{
+                maxHeight: '380px',
+                overflowY: 'auto',
+                border: '1px solid var(--card-border)',
+                borderRadius: '10px',
+                padding: '1rem 1rem 0 1rem',
+                background: 'rgba(26, 29, 46, 0.4)',
+              }}
+            >
+              {Array.from(groupedContentOpps.entries()).map(([cluster, ptMap]) => {
+                const totalInCluster = Array.from(ptMap.values()).reduce((sum, g) => sum + g.keywords.length, 0);
+                return (
+                  <details key={cluster} style={{ marginBottom: '1rem', border: '1px solid var(--card-border)', borderRadius: '10px', overflow: 'hidden', background: 'var(--card)' }}>
+                    <summary style={{ padding: '0.75rem 1rem', cursor: 'pointer', fontWeight: 600, background: 'var(--card)', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span>📁 Cluster: {cluster}</span>
+                      <span style={{ fontSize: '0.875rem', color: 'var(--muted)', fontWeight: 400 }}>{totalInCluster} keywords</span>
+                    </summary>
+                    <div style={{ padding: '1rem' }}>
+                      {Array.from(ptMap.entries()).map(([pageTarget, { meta, keywords }]) => (
+                        <details key={pageTarget} style={{ marginBottom: '0.75rem', border: '1px solid var(--card-border)', borderRadius: '8px', background: 'var(--bg, #0a0a0a)' }}>
+                          <summary style={{ padding: '0.6rem 0.9rem', cursor: 'pointer', fontWeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <span>🎯 Page Target: {pageTarget}</span>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{keywords.length} kw</span>
+                          </summary>
+                          <div style={{ padding: '0.9rem', fontSize: '0.875rem', borderTop: '1px solid var(--card-border)' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.4rem 1rem', marginBottom: '0.75rem' }}>
+                              <div><strong>Priority:</strong> {meta.priority}</div>
+                              <div><strong>SV Tag:</strong> {meta.serpvault_tag}</div>
+                              <div><strong>Intent:</strong> {meta.intent}</div>
+                              <div><strong>Domain:</strong> {meta.domain}</div>
+                              <div><strong>Location:</strong> {meta.location}</div>
+                              <div><strong>Niche:</strong> {meta.niche}</div>
+                              <div><strong>Suggested Type:</strong> {meta.suggestedType}</div>
+                            </div>
+                            <div style={{ marginBottom: '0.35rem', fontWeight: 500 }}>Keywords:</div>
+                            <ul style={{ margin: 0, paddingLeft: '1.1rem', lineHeight: 1.5 }}>
+                              {keywords.map((k: any) => (
+                                <li key={k.id}>{k.keyword}{k.volume != null ? ` (${k.volume.toLocaleString()})` : ''}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        </details>
+                      ))}
+                    </div>
+                  </details>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
