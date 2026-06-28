@@ -107,22 +107,25 @@ function normalizeScopeValue(value?: string): string {
   return trimmed || '-';
 }
 
-function firstScopeValue(row: SiteScopedRow, keys: string[], fallbacks: Array<string | undefined> = []): string {
-  const raw = row.raw || {};
-  for (const key of keys) {
-    const direct = raw[key];
-    if (direct?.toString().trim()) return normalizeScopeValue(direct);
-
-    const match = Object.keys(raw).find((rawKey) => rawKey.toLowerCase() === key.toLowerCase());
-    if (match && raw[match]?.toString().trim()) return normalizeScopeValue(raw[match]);
-  }
-
-  for (const fallback of fallbacks) {
-    if (fallback?.toString().trim()) return normalizeScopeValue(fallback);
-  }
-
-  return '-';
-}
+/** Explicit project/client/owned-site fields for domain auto-detection. */
+const EXPLICIT_PROJECT_DOMAIN_KEYS = [
+  'project_domain',
+  'project domain',
+  'project site',
+  'project site domain',
+  'client_domain',
+  'client domain',
+  'client website',
+  'client site',
+  'site_domain',
+  'site domain',
+  'yourDomain',
+  'your domain',
+  'your website',
+  'your site',
+  'target project',
+  'target project domain',
+];
 
 function extractDomain(val: string): string {
   if (!val) return '';
@@ -167,6 +170,12 @@ function getFieldValue(row: any, keys: string[]): string | undefined {
   return undefined;
 }
 
+/**
+ * Detects the project/site scope for a given row.
+ * Strict rules: Only auto-detect project domain if explicit project/client/owned-site fields exist.
+ * Do not fallback to generic/competitor SEO domains or URLs.
+ * If project domain exists, location and niche are extracted from explicit fields.
+ */
 export function getRowSiteScope(row: any): NonNullable<SiteSelection> {
   const getExplicitLocation = () => {
     const r = row.raw || {};
@@ -181,64 +190,18 @@ export function getRowSiteScope(row: any): NonNullable<SiteSelection> {
   };
 
   let domain = '';
-  const location = getExplicitLocation();
-  const niche = getExplicitNiche();
+  let location = '';
+  let niche = '';
 
-  const hasBacklinkFields = row.targetUrl !== undefined || row.sourceUrl !== undefined ||
-    getFieldValue(row, ['targetUrl', 'sourceUrl']) !== undefined;
-
-  const hasReferringDomainFields = row.referringDomain !== undefined || row.targetDomain !== undefined ||
-    getFieldValue(row, ['referringDomain', 'targetDomain']) !== undefined;
-
-  if (hasBacklinkFields) {
-    const targetKeys = ['targetUrl', 'target domain', 'to domain', 'destination domain', 'your domain'];
-    const targetVal = getFieldValue(row, targetKeys) || row.targetUrl;
-    if (targetVal && targetVal !== '-') {
-      domain = extractDomain(targetVal);
-    } else {
-      const fallbackKeys = ['sourceUrl', 'source domain', 'referring domain', 'referringDomain', 'from domain', 'domain'];
-      const fallbackVal = getFieldValue(row, fallbackKeys) || row.sourceUrl || row.domain;
-      if (fallbackVal && fallbackVal !== '-') {
-        domain = extractDomain(fallbackVal);
-      }
-    }
-  } else if (hasReferringDomainFields) {
-    const targetKeys = ['targetDomain', 'target domain', 'destination domain', 'your domain'];
-    const targetVal = getFieldValue(row, targetKeys) || row.targetDomain;
-    if (targetVal && targetVal !== '-') {
-      domain = extractDomain(targetVal);
-    } else {
-      const fallbackKeys = ['referringDomain', 'referring domain', 'domain'];
-      const fallbackVal = getFieldValue(row, fallbackKeys) || row.referringDomain || row.domain;
-      if (fallbackVal && fallbackVal !== '-') {
-        domain = extractDomain(fallbackVal);
-      }
-    }
-  } else {
-    const hasUrlField = row.url !== undefined || getFieldValue(row, ['url']) !== undefined;
-    const hasKeywordField = row.keyword !== undefined || getFieldValue(row, ['keyword']) !== undefined;
-    const isCompetitorPage = hasUrlField && !hasKeywordField;
-
-    if (isCompetitorPage) {
-      const domainVal = getFieldValue(row, ['domain']) || row.domain;
-      if (domainVal && domainVal !== '-') {
-        domain = extractDomain(domainVal);
-      } else {
-        const urlVal = getFieldValue(row, ['url']) || row.url;
-        if (urlVal && urlVal !== '-') {
-          domain = extractDomain(urlVal);
-        }
-      }
-    } else {
-      const domainVal = getFieldValue(row, ['domain']) || row.domain;
-      if (domainVal && domainVal !== '-') {
-        domain = extractDomain(domainVal);
-      } else {
-        const yourDomainVal = getFieldValue(row, ['yourDomain', 'your domain']) || row.yourDomain;
-        if (yourDomainVal && yourDomainVal !== '-') {
-          domain = extractDomain(yourDomainVal);
-        }
-      }
+  // Requirement 1 & 2: Only detect project domains via explicit fields.
+  // Never fallback to generic 'domain', competitor pages URL, backlinks target/source, etc.
+  const explicitDomainVal = getFieldValue(row, EXPLICIT_PROJECT_DOMAIN_KEYS);
+  if (explicitDomainVal && explicitDomainVal !== '-') {
+    domain = extractDomain(explicitDomainVal);
+    // Requirement 3: Extract location and niche only if a valid project domain exists.
+    if (domain) {
+      location = getExplicitLocation() || '';
+      niche = getExplicitNiche() || '';
     }
   }
 
