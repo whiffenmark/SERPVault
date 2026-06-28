@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { updateStore } from '@/lib/storage';
+import { updateStore, getSelectedSite } from '@/lib/storage';
 import * as db from '@/lib/db';
 import type { KeywordRecord, Tag } from '@/lib/types';
 import DataTable from '@/components/DataTable';

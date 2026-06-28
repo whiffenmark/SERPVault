@@ -59,3 +59,31 @@ export function removeUpload(uploadId: string): void {
     dedupeReports: store.dedupeReports.filter((r) => r.uploadId !== uploadId),
   }));
 }
+
+// --- Project/Site Selector (localStorage only, PR #8) ---
+const SITE_KEY = 'serpvault_selected_site';
+
+export type SiteSelection = {
+  domain: string;
+  location: string;
+  niche: string;
+} | null;
+
+export function getSelectedSite(): SiteSelection {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(SITE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setSelectedSite(site: SiteSelection): void {
+  if (typeof window === 'undefined') return;
+  if (site) {
+    localStorage.setItem(SITE_KEY, JSON.stringify(site));
+  } else {
+    localStorage.removeItem(SITE_KEY);
+  }
+}

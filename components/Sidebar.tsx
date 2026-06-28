@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import ProjectSiteSelector from './ProjectSiteSelector';
 
 const nav = [
   { href: '/', label: 'Dashboard', icon: '⌂' },
@@ -36,6 +37,7 @@ export default function Sidebar() {
           SERP<span style={{ color: 'var(--foreground)' }}>Vault</span>
         </div>
         <div style={{ fontSize: '0.7rem', color: 'var(--muted)', marginTop: '2px' }}>Private SEO Command Center</div>
+        <ProjectSiteSelector />
       </div>
 
       <nav style={{ display: 'flex', flexDirection: 'column', gap: '2px', padding: '0 0.5rem' }}>
