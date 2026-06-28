@@ -12,9 +12,9 @@ type SiteOption = {
 export default function ProjectSiteSelector() {
   const [selected, setSelected] = useState<SiteSelection>(null);
   const [options, setOptions] = useState<SiteOption[]>([]);
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showModal, setShowModal] = useState(false);
 
-  // Manual form state (for advanced)
+  // Manual form state (used only inside modal)
   const [domain, setDomain] = useState('');
   const [location, setLocation] = useState('');
   const [niche, setNiche] = useState('');
@@ -28,7 +28,7 @@ export default function ProjectSiteSelector() {
       setNiche(s.niche);
     }
 
-    // Auto-generate options from uploaded data (domain + location + niche from raw rows)
+    // Auto-generate options from uploaded data
     const store = getStore();
     const unique = new Map<string, NonNullable<SiteSelection>>();
 
@@ -53,7 +53,6 @@ export default function ProjectSiteSelector() {
 
     addFromRows(store.keywords || []);
     addFromRows(store.keywordGaps || []);
-    // Could extend to other record types if they have the fields
 
     const opts: SiteOption[] = Array.from(unique.values()).map((site) => ({
       key: `${site.domain}|${site.location}|${site.niche}`,
@@ -61,7 +60,6 @@ export default function ProjectSiteSelector() {
       label: `${site.domain} / ${site.location} / ${site.niche}`,
     }));
 
-    // Sort by domain then location
     opts.sort((a, b) => a.label.localeCompare(b.label));
     setOptions(opts);
   }, []);
@@ -78,7 +76,7 @@ export default function ProjectSiteSelector() {
       setLocation('');
       setNiche('');
     }
-    setShowAdvanced(false);
+    setShowModal(false);
     window.location.reload();
   };
 
@@ -98,7 +96,7 @@ export default function ProjectSiteSelector() {
     setDomain('');
     setLocation('');
     setNiche('');
-    setShowAdvanced(false);
+    setShowModal(false);
     window.location.reload();
   };
 
@@ -117,7 +115,7 @@ export default function ProjectSiteSelector() {
         )}
       </div>
 
-      {/* Compact dropdown selector */}
+      {/* Compact dropdown selector only */}
       <select
         value={selected ? `${selected.domain}|${selected.location}|${selected.niche}` : ''}
         onChange={(e) => {
@@ -153,10 +151,10 @@ export default function ProjectSiteSelector() {
         </div>
       )}
 
-      {/* Advanced manual filter toggle (collapsed by default) */}
+      {/* Small Manage/Advanced button - opens modal */}
       <div style={{ marginTop: '0.35rem' }}>
         <button
-          onClick={() => setShowAdvanced(!showAdvanced)}
+          onClick={() => setShowModal(true)}
           style={{
             fontSize: '0.6rem',
             color: 'var(--accent)',
@@ -164,50 +162,89 @@ export default function ProjectSiteSelector() {
             border: 'none',
             cursor: 'pointer',
             padding: 0,
+            textDecoration: 'underline',
           }}
         >
-          {showAdvanced ? '− Hide advanced' : '+ Advanced filter (manual)'}
+          Manage / Advanced
         </button>
       </div>
 
-      {showAdvanced && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: '0.35rem', paddingTop: '0.35rem', borderTop: '1px solid var(--card-border)' }}>
-          <input
-            type="text"
-            placeholder="Domain (e.g. example.com)"
-            value={domain}
-            onChange={(e) => setDomain(e.target.value)}
-            style={{ fontSize: '0.7rem', padding: '0.3rem 0.45rem', border: '1px solid var(--card-border)', borderRadius: '4px', background: 'var(--background)' }}
-          />
-          <input
-            type="text"
-            placeholder="Location / Country"
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            style={{ fontSize: '0.7rem', padding: '0.3rem 0.45rem', border: '1px solid var(--card-border)', borderRadius: '4px', background: 'var(--background)' }}
-          />
-          <input
-            type="text"
-            placeholder="Niche"
-            value={niche}
-            onChange={(e) => setNiche(e.target.value)}
-            style={{ fontSize: '0.7rem', padding: '0.3rem 0.45rem', border: '1px solid var(--card-border)', borderRadius: '4px', background: 'var(--background)' }}
-          />
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button onClick={saveManual} style={{ flex: 1, fontSize: '0.65rem', padding: '0.25rem', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-              Save & Filter
-            </button>
-            <button onClick={() => setShowAdvanced(false)} style={{ fontSize: '0.65rem', padding: '0.25rem', background: 'transparent', border: '1px solid var(--card-border)', borderRadius: '4px', cursor: 'pointer' }}>
-              Cancel
-            </button>
-          </div>
-          <div style={{ fontSize: '0.55rem', color: 'var(--muted)' }}>Manual entry (auto options preferred from uploads).</div>
+      {!selected && options.length > 0 && (
+        <div style={{ fontSize: '0.55rem', color: 'var(--muted)', marginTop: '0.2rem' }}>
+          Auto from uploads • {options.length} projects
         </div>
       )}
 
-      {!showAdvanced && (
-        <div style={{ fontSize: '0.55rem', color: 'var(--muted)', marginTop: '0.2rem' }}>
-          Auto from uploads • {options.length} projects
+      {/* Modal for manual/advanced entry */}
+      {showModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.7)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+          onClick={() => setShowModal(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--card)',
+              border: '1px solid var(--card-border)',
+              borderRadius: '10px',
+              padding: '1.25rem',
+              width: 'min(420px, 92vw)',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+            }}
+          >
+            <div style={{ fontWeight: 600, marginBottom: '0.75rem', fontSize: '0.95rem' }}>Advanced Project / Site Filter</div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <input
+                type="text"
+                placeholder="Domain (e.g. example.com)"
+                value={domain}
+                onChange={(e) => setDomain(e.target.value)}
+                style={{ fontSize: '0.8rem', padding: '0.45rem 0.6rem', border: '1px solid var(--card-border)', borderRadius: '6px', background: 'var(--background)' }}
+              />
+              <input
+                type="text"
+                placeholder="Location / Country"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                style={{ fontSize: '0.8rem', padding: '0.45rem 0.6rem', border: '1px solid var(--card-border)', borderRadius: '6px', background: 'var(--background)' }}
+              />
+              <input
+                type="text"
+                placeholder="Niche"
+                value={niche}
+                onChange={(e) => setNiche(e.target.value)}
+                style={{ fontSize: '0.8rem', padding: '0.45rem 0.6rem', border: '1px solid var(--card-border)', borderRadius: '6px', background: 'var(--background)' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.6rem', marginTop: '1rem' }}>
+              <button
+                onClick={saveManual}
+                style={{ flex: 1, fontSize: '0.8rem', padding: '0.5rem', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 500 }}
+              >
+                Save & Filter
+              </button>
+              <button
+                onClick={() => setShowModal(false)}
+                style={{ fontSize: '0.8rem', padding: '0.5rem', background: 'transparent', border: '1px solid var(--card-border)', borderRadius: '6px', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+            </div>
+
+            <div style={{ marginTop: '0.75rem', fontSize: '0.65rem', color: 'var(--muted)', lineHeight: 1.4 }}>
+              Manual entry overrides the dropdown. Values are matched against uploaded CSV fields (domain, location/country, niche). Use “All Projects” in the sidebar dropdown for no filter.
+            </div>
+          </div>
         </div>
       )}
     </div>

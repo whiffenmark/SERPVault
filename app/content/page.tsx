@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { updateStore } from '@/lib/storage';
+import { updateStore, getSelectedSite } from '@/lib/storage';
 import * as db from '@/lib/db';
 import type { KeywordRecord, KeywordGapRecord, Tag } from '@/lib/types';
 import DataTable from '@/components/DataTable';
@@ -18,10 +18,24 @@ export default function ContentPage() {
 
   useEffect(() => {
     Promise.all([db.getKeywords(), db.getKeywordGaps()]).then(([kws, gaps]) => {
-      const all: ContentRow[] = [
-        ...kws.map((k) => ({ ...k, _source: 'keyword' as const })),
-        ...gaps.map((k) => ({ ...k, _source: 'gap' as const })),
+      let all: ContentRow[] = [
+        ...kws.map((k) => ({ ...k, _source: "keyword" as const })),
+        ...gaps.map((k) => ({ ...k, _source: "gap" as const })),
       ].sort((a, b) => (b.opportunityScore ?? 0) - (a.opportunityScore ?? 0));
+
+      const site = getSelectedSite();
+      if (site) {
+        all = all.filter((r) => {
+          const raw = r.raw || {};
+          const d = raw.domain ?? raw.Domain ?? "-";
+          const l = raw.location ?? raw.Location ?? raw.country ?? "-";
+          const n = raw.niche ?? raw.Niche ?? "-";
+          const matchD = !site.domain || site.domain === "-" || d === site.domain;
+          const matchL = !site.location || site.location === "-" || l === site.location;
+          const matchN = !site.niche || site.niche === "-" || n === site.niche;
+          return matchD && matchL && matchN;
+        });
+      }
       setRows(all);
     }).finally(() => setLoading(false));
   }, []);

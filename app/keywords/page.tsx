@@ -85,6 +85,18 @@ export default function KeywordsPage() {
 
   const filteredKeywords = useMemo(() => {
     let result = keywords;
+    const site = getSelectedSite();
+    if (site) {
+      result = result.filter((k) => {
+        const d = getVal(k, "domain");
+        const l = getVal(k, "location");
+        const n = getVal(k, "niche");
+        const matchD = !site.domain || site.domain === "-" || d === site.domain;
+        const matchL = !site.location || site.location === "-" || l === site.location;
+        const matchN = !site.niche || site.niche === "-" || n === site.niche;
+        return matchD && matchL && matchN;
+      });
+    }
     if (keywordSearch) {
       const q = keywordSearch.toLowerCase();
       result = result.filter((k) => k.keyword.toLowerCase().includes(q));
