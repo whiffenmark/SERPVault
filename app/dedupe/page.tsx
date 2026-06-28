@@ -71,7 +71,7 @@ export default function DedupePage() {
                   </summary>
                   <div style={{ marginTop: '0.5rem' }}>
                     {r.duplicateExamples.map((ex, i) => (
-                      <div key={i} style={{ fontSize: '0.72rem', color: 'var(--muted)', background: 'rgba(0,0,0,0.2)', borderRadius: '4px', padding: '0.4rem 0.6rem', marginBottom: '0.25rem', fontFamily: 'monospace' }}>
+                      <div key={i} style={{ fontSize: '0.72rem', color: 'var(--muted)', background: 'var(--code-bg)', borderRadius: '4px', padding: '0.4rem 0.6rem', marginBottom: '0.25rem', fontFamily: 'monospace' }}>
                         {Object.entries(ex).slice(0, 6).map(([k, v]) => `${k}: ${v}`).join(' | ')}
                       </div>
                     ))}

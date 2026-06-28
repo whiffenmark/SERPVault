@@ -1,7 +1,9 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { Sun, Moon } from 'lucide-react';
 import ProjectSiteSelector from './ProjectSiteSelector';
 
 const nav = [
@@ -18,6 +20,19 @@ const nav = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+
+  useEffect(() => {
+    const currentTheme = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+    setTheme(currentTheme);
+  }, []);
+
+  const toggleTheme = () => {
+    const nextTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(nextTheme);
+    document.documentElement.setAttribute('data-theme', nextTheme);
+    localStorage.setItem('serpvault_theme', nextTheme);
+  };
 
   return (
     <aside
@@ -69,8 +84,57 @@ export default function Sidebar() {
         })}
       </nav>
 
-      <div style={{ marginTop: 'auto', padding: '1rem 1.25rem', borderTop: '1px solid var(--card-border)', fontSize: '0.7rem', color: 'var(--muted)' }}>
-        Data stored locally in browser
+      <div style={{ marginTop: 'auto', borderTop: '1px solid var(--card-border)' }}>
+        <div style={{ padding: '0.75rem 1.25rem 0' }}>
+          <button
+            type="button"
+            aria-label="Switch to light/dark mode"
+            aria-pressed={theme === 'light'}
+            onClick={toggleTheme}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              width: '100%',
+              background: 'rgba(99,102,241,0.08)',
+              border: '1px solid var(--card-border)',
+              borderRadius: '6px',
+              color: 'var(--foreground)',
+              cursor: 'pointer',
+              fontSize: '0.78rem',
+              padding: '0.4rem 0.75rem',
+              transition: 'background 0.15s, border-color 0.15s',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(99,102,241,0.15)';
+              e.currentTarget.style.borderColor = 'var(--accent)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(99,102,241,0.08)';
+              e.currentTarget.style.borderColor = 'var(--card-border)';
+            }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500 }}>
+              {theme === 'dark' ? (
+                <>
+                  <Moon size={14} style={{ color: 'var(--accent)' }} />
+                  <span>Dark Mode</span>
+                </>
+              ) : (
+                <>
+                  <Sun size={14} style={{ color: 'var(--accent)' }} />
+                  <span>Light Mode</span>
+                </>
+              )}
+            </span>
+            <span style={{ fontSize: '0.7rem', color: 'var(--muted)', textTransform: 'uppercase', fontWeight: 600 }}>
+              Switch
+            </span>
+          </button>
+        </div>
+        <div style={{ padding: '0.75rem 1.25rem 1rem', fontSize: '0.7rem', color: 'var(--muted)' }}>
+          Data stored locally in browser
+        </div>
       </div>
     </aside>
   );

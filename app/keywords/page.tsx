@@ -208,7 +208,7 @@ export default function KeywordsPage() {
                 border: '1px solid var(--card-border)',
                 borderRadius: '10px',
                 padding: '1rem 1rem 0 1rem',
-                background: 'rgba(26, 29, 46, 0.4)',
+                background: 'var(--panel-subtle)',
               }}
             >
               {Array.from(groupedPlanner.entries()).map(([cluster, ptMap]) => {

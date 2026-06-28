@@ -479,7 +479,7 @@ function ResultCard({
           </div>
 
           {/* Preview first 5 rows */}
-          <div style={{ marginTop: '0.5rem', fontSize: '0.7rem', background: '#111', padding: '0.4rem', borderRadius: '4px', overflowX: 'auto', color: '#aaa' }}>
+          <div style={{ marginTop: '0.5rem', fontSize: '0.7rem', background: 'var(--code-bg)', padding: '0.4rem', borderRadius: '4px', overflowX: 'auto', color: 'var(--foreground)' }}>
             <pre style={{ margin: 0, whiteSpace: 'pre' }}>{JSON.stringify(result.health.preview, null, 2)}</pre>
           </div>
         </div>

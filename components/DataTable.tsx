@@ -124,7 +124,7 @@ export default function DataTable<T extends { id: string; tag?: Tag }>({
       <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid var(--card-border)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
           <thead>
-            <tr style={{ borderBottom: '1px solid var(--card-border)', background: 'rgba(45,49,72,0.5)' }}>
+            <tr style={{ borderBottom: '1px solid var(--card-border)', background: 'var(--table-header)' }}>
               {columns.map((col) => (
                 <th
                   key={col.key}
@@ -160,7 +160,7 @@ export default function DataTable<T extends { id: string; tag?: Tag }>({
                 key={row.id}
                 style={{
                   borderBottom: '1px solid var(--card-border)',
-                  background: i % 2 === 0 ? 'transparent' : 'rgba(26,29,46,0.4)',
+                  background: i % 2 === 0 ? 'transparent' : 'var(--row-alt)',
                 }}
               >
                 {columns.map((col) => (
