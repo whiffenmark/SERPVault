@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getSelectedSite, setSelectedSite, type SiteSelection, getStore } from '@/lib/storage';
+import { getSelectedSite, setSelectedSite, type SiteSelection, getStore, getRowSiteScope } from '@/lib/storage';
 
 type SiteOption = {
   key: string;
@@ -69,18 +69,11 @@ export default function ProjectSiteSelector() {
 
     const addFromRows = (rows: any[]) => {
       rows.forEach((row: any) => {
-        const r = row.raw || {};
-        const d = (r.domain ?? r.Domain ?? row.domain ?? '-').toString().trim();
-        const l = (r.location ?? r.Location ?? r.country ?? row.country ?? row.location ?? '-').toString().trim();
-        const n = (r.niche ?? r.Niche ?? '-').toString().trim();
-        if (d !== '-' || l !== '-' || n !== '-') {
-          const key = `${d}|${l}|${n}`;
+        const site = getRowSiteScope(row);
+        if (site.domain && site.domain !== '-') {
+          const key = `${site.domain}|${site.location}|${site.niche}`;
           if (!unique.has(key)) {
-            unique.set(key, {
-              domain: d || '-',
-              location: l || '-',
-              niche: n || '-',
-            });
+            unique.set(key, site);
           }
         }
       });
@@ -88,6 +81,10 @@ export default function ProjectSiteSelector() {
 
     addFromRows(store.keywords || []);
     addFromRows(store.keywordGaps || []);
+    addFromRows(store.competitorPages || []);
+    addFromRows(store.backlinks || []);
+    addFromRows(store.referringDomains || []);
+    addFromRows(store.anchorTexts || []);
 
     const opts: SiteOption[] = Array.from(unique.values()).map((site) => ({
       key: `${site.domain}|${site.location}|${site.niche}`,

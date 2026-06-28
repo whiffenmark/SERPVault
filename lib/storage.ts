@@ -74,6 +74,12 @@ type SiteScopedRow = {
   database?: string;
   domain?: string;
   location?: string;
+  url?: string;
+  targetUrl?: string;
+  sourceUrl?: string;
+  referringDomain?: string;
+  targetDomain?: string;
+  yourDomain?: string;
   raw?: Record<string, string>;
 };
 
@@ -118,11 +124,128 @@ function firstScopeValue(row: SiteScopedRow, keys: string[], fallbacks: Array<st
   return '-';
 }
 
-export function getRowSiteScope(row: SiteScopedRow): NonNullable<SiteSelection> {
+function extractDomain(val: string): string {
+  if (!val) return '';
+  let str = val.trim();
+  if (!str || str === '-') return '';
+  let hostname = '';
+  try {
+    hostname = new URL(str.includes('://') ? str : `https://${str}`).hostname;
+  } catch {
+    hostname = str.split('/')[0];
+  }
+  hostname = hostname.split(':')[0];
+  hostname = hostname.replace(/^www\./i, '');
+  return hostname.trim();
+}
+
+function getFieldValue(row: any, keys: string[]): string | undefined {
+  const r = row.raw || {};
+  const normalizeKey = (k: string) => k.toLowerCase().replace(/[\s_-]+/g, '');
+  const normalizedSearchKeys = keys.map(normalizeKey);
+
+  for (const rawKey of Object.keys(r)) {
+    if (normalizedSearchKeys.includes(normalizeKey(rawKey))) {
+      const val = r[rawKey];
+      if (val !== undefined && val !== null) {
+        const trimmed = val.toString().trim();
+        if (trimmed) return trimmed;
+      }
+    }
+  }
+
+  for (const propKey of Object.keys(row)) {
+    if (normalizedSearchKeys.includes(normalizeKey(propKey))) {
+      const val = row[propKey];
+      if (val !== undefined && val !== null) {
+        const trimmed = val.toString().trim();
+        if (trimmed) return trimmed;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+export function getRowSiteScope(row: any): NonNullable<SiteSelection> {
+  const getExplicitLocation = () => {
+    const r = row.raw || {};
+    const val = r.location ?? r.Location ?? r.country ?? r.Country ?? r.database ?? r.Database ?? row.location ?? row.country ?? row.database;
+    return val !== undefined && val !== null ? val.toString().trim() : undefined;
+  };
+
+  const getExplicitNiche = () => {
+    const r = row.raw || {};
+    const val = r.niche ?? r.Niche ?? row.niche;
+    return val !== undefined && val !== null ? val.toString().trim() : undefined;
+  };
+
+  let domain = '';
+  const location = getExplicitLocation();
+  const niche = getExplicitNiche();
+
+  const hasBacklinkFields = row.targetUrl !== undefined || row.sourceUrl !== undefined ||
+    getFieldValue(row, ['targetUrl', 'sourceUrl']) !== undefined;
+
+  const hasReferringDomainFields = row.referringDomain !== undefined || row.targetDomain !== undefined ||
+    getFieldValue(row, ['referringDomain', 'targetDomain']) !== undefined;
+
+  if (hasBacklinkFields) {
+    const targetKeys = ['targetUrl', 'target domain', 'to domain', 'destination domain', 'your domain'];
+    const targetVal = getFieldValue(row, targetKeys) || row.targetUrl;
+    if (targetVal && targetVal !== '-') {
+      domain = extractDomain(targetVal);
+    } else {
+      const fallbackKeys = ['sourceUrl', 'source domain', 'referring domain', 'referringDomain', 'from domain', 'domain'];
+      const fallbackVal = getFieldValue(row, fallbackKeys) || row.sourceUrl || row.domain;
+      if (fallbackVal && fallbackVal !== '-') {
+        domain = extractDomain(fallbackVal);
+      }
+    }
+  } else if (hasReferringDomainFields) {
+    const targetKeys = ['targetDomain', 'target domain', 'destination domain', 'your domain'];
+    const targetVal = getFieldValue(row, targetKeys) || row.targetDomain;
+    if (targetVal && targetVal !== '-') {
+      domain = extractDomain(targetVal);
+    } else {
+      const fallbackKeys = ['referringDomain', 'referring domain', 'domain'];
+      const fallbackVal = getFieldValue(row, fallbackKeys) || row.referringDomain || row.domain;
+      if (fallbackVal && fallbackVal !== '-') {
+        domain = extractDomain(fallbackVal);
+      }
+    }
+  } else {
+    const hasUrlField = row.url !== undefined || getFieldValue(row, ['url']) !== undefined;
+    const hasKeywordField = row.keyword !== undefined || getFieldValue(row, ['keyword']) !== undefined;
+    const isCompetitorPage = hasUrlField && !hasKeywordField;
+
+    if (isCompetitorPage) {
+      const domainVal = getFieldValue(row, ['domain']) || row.domain;
+      if (domainVal && domainVal !== '-') {
+        domain = extractDomain(domainVal);
+      } else {
+        const urlVal = getFieldValue(row, ['url']) || row.url;
+        if (urlVal && urlVal !== '-') {
+          domain = extractDomain(urlVal);
+        }
+      }
+    } else {
+      const domainVal = getFieldValue(row, ['domain']) || row.domain;
+      if (domainVal && domainVal !== '-') {
+        domain = extractDomain(domainVal);
+      } else {
+        const yourDomainVal = getFieldValue(row, ['yourDomain', 'your domain']) || row.yourDomain;
+        if (yourDomainVal && yourDomainVal !== '-') {
+          domain = extractDomain(yourDomainVal);
+        }
+      }
+    }
+  }
+
   return {
-    domain: firstScopeValue(row, ['domain'], [row.domain]),
-    location: firstScopeValue(row, ['location', 'country', 'database'], [row.location, row.country, row.database]),
-    niche: firstScopeValue(row, ['niche']),
+    domain: normalizeScopeValue(domain),
+    location: normalizeScopeValue(location),
+    niche: normalizeScopeValue(niche),
   };
 }
 
