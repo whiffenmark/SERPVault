@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { updateStore } from '@/lib/storage';
 import * as db from '@/lib/db';
 import type { KeywordRecord, KeywordGapRecord, Tag } from '@/lib/types';
@@ -42,6 +42,52 @@ export default function ContentPage() {
   const displayRows = tab === 'all' ? rows : tab === 'tagged' ? rows.filter((r) => r.tag && r.tag !== 'Ignore') : rows.filter((r) => r._source === 'gap');
   const tagCounts = Object.fromEntries(['Money Page', 'Blog Post', 'City Page', 'Link Bait', 'Ignore'].map((t) => [t, rows.filter((r) => r.tag === t).length]));
 
+  // Hermes-style grouped content opportunities (Cluster → Page Target → Keywords)
+  const hermesKeywords = useMemo(() => (rows.filter((r) => r._source === 'keyword') as any[]).filter((k: any) => {
+    const r = k.raw || {};
+    return !!(r.cluster || r.Cluster || r['Cluster'] || r.page_target || r['page target'] || r.pageTarget);
+  }), [rows]);
+
+  const groupedContentOpps = useMemo(() => {
+    const clusterMap = new Map<string, Map<string, { meta: any; keywords: any[] }>>();
+    for (const row of hermesKeywords) {
+      const r = row.raw || {};
+      const cluster = r.cluster ?? r.Cluster ?? r['Cluster'] ?? 'Uncategorized';
+      const pageTarget = r.page_target ?? r['page target'] ?? r.pageTarget ?? 'No Page Target';
+      if (!clusterMap.has(cluster)) clusterMap.set(cluster, new Map());
+      const ptMap = clusterMap.get(cluster)!;
+      if (!ptMap.has(pageTarget)) {
+        const svTag = r.serpvault_tag ?? r['serpvault tag'] ?? r.serpvaultTag ?? '-';
+        const priority = r.priority ?? r.Priority ?? '-';
+        ptMap.set(pageTarget, {
+          meta: {
+            priority,
+            serpvault_tag: svTag,
+            intent: r.intent ?? r.Intent ?? row.intent ?? '-',
+            domain: r.domain ?? r.Domain ?? '-',
+            location: r.location ?? r.Location ?? r.country ?? row.country ?? '-',
+            niche: r.niche ?? r.Niche ?? '-',
+            suggestedType: suggestContentType(svTag, priority, row.tag),
+          },
+          keywords: [],
+        });
+      }
+      ptMap.get(pageTarget)!.keywords.push(row);
+    }
+    return clusterMap;
+  }, [hermesKeywords]);
+
+  function suggestContentType(svTag: string, priority: string, existingTag?: Tag): Tag | '-' {
+    if (existingTag) return existingTag;
+    const t = (svTag || '').toLowerCase();
+    const p = (priority || '').toLowerCase();
+    if (t.includes('money') || t.includes('commercial') || p === 'high') return 'Money Page';
+    if (t.includes('blog') || t.includes('informational') || t.includes('guide')) return 'Blog Post';
+    if (t.includes('city') || t.includes('local') || t.includes('geo')) return 'City Page';
+    if (t.includes('link') || t.includes('bait')) return 'Link Bait';
+    return '-';
+  }
+
   const columns: Column<ContentRow>[] = [
     { key: 'keyword', label: 'Keyword', sortKey: (r) => r.keyword },
     { key: 'volume', label: 'Volume', sortKey: (r) => r.volume ?? 0, render: (r) => r.volume?.toLocaleString() ?? '-' },
@@ -71,6 +117,52 @@ export default function ContentPage() {
         <Card title="City Pages" value={tagCounts['City Page'] ?? 0} />
         <Card title="Link Bait" value={tagCounts['Link Bait'] ?? 0} />
       </div>
+
+      {/* Hermes-style Grouped Content Opportunities - PR #7 */}
+      {hermesKeywords.length > 0 && (
+        <div style={{ marginBottom: '2rem' }}>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '0.75rem' }}>Hermes Grouped Content Opportunities</h2>
+          {Array.from(groupedContentOpps.entries()).map(([cluster, ptMap]) => {
+            const totalInCluster = Array.from(ptMap.values()).reduce((sum, g) => sum + g.keywords.length, 0);
+            return (
+              <details key={cluster} style={{ marginBottom: '1rem', border: '1px solid var(--card-border)', borderRadius: '10px', overflow: 'hidden', background: 'var(--card)' }}>
+                <summary style={{ padding: '0.75rem 1rem', cursor: 'pointer', fontWeight: 600, background: 'var(--card)', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>📁 Cluster: {cluster}</span>
+                  <span style={{ fontSize: '0.875rem', color: 'var(--muted)', fontWeight: 400 }}>{totalInCluster} keywords</span>
+                </summary>
+                <div style={{ padding: '1rem' }}>
+                  {Array.from(ptMap.entries()).map(([pageTarget, { meta, keywords }]) => (
+                    <details key={pageTarget} style={{ marginBottom: '0.75rem', border: '1px solid var(--card-border)', borderRadius: '8px', background: 'var(--bg, #0a0a0a)' }}>
+                      <summary style={{ padding: '0.6rem 0.9rem', cursor: 'pointer', fontWeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span>🎯 Page Target: {pageTarget}</span>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{keywords.length} kw</span>
+                      </summary>
+                      <div style={{ padding: '0.9rem', fontSize: '0.875rem', borderTop: '1px solid var(--card-border)' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.4rem 1rem', marginBottom: '0.75rem' }}>
+                          <div><strong>Priority:</strong> {meta.priority}</div>
+                          <div><strong>SV Tag:</strong> {meta.serpvault_tag}</div>
+                          <div><strong>Intent:</strong> {meta.intent}</div>
+                          <div><strong>Domain:</strong> {meta.domain}</div>
+                          <div><strong>Location:</strong> {meta.location}</div>
+                          <div><strong>Niche:</strong> {meta.niche}</div>
+                          <div><strong>Suggested Type:</strong> {meta.suggestedType}</div>
+                        </div>
+                        <div style={{ marginBottom: '0.35rem', fontWeight: 500 }}>Keywords:</div>
+                        <ul style={{ margin: 0, paddingLeft: '1.1rem', lineHeight: 1.5 }}>
+                          {keywords.map((k: any) => (
+                            <li key={k.id}>{k.keyword}{k.volume != null ? ` (${k.volume.toLocaleString()})` : ''}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </details>
+                  ))}
+                </div>
+              </details>
+            );
+          })}
+        </div>
+      )}
+
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
         {(['all', 'tagged', 'gap'] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)} style={{ padding: '0.4rem 1rem', borderRadius: '6px', border: '1px solid', borderColor: tab === t ? 'var(--accent)' : 'var(--card-border)', background: tab === t ? 'rgba(99,102,241,0.15)' : 'var(--card)', color: tab === t ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer', fontSize: '0.82rem', fontWeight: tab === t ? 600 : 400 }}>
