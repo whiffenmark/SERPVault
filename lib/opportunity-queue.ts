@@ -31,6 +31,18 @@ function extractDomain(urlStr?: string): string {
   }
 }
 
+function normalizeIdPart(part: string | undefined | null): string {
+  if (!part) return '';
+  return part.trim().toLowerCase().replace(/[\s:]+/g, '-');
+}
+
+function normalizeIdParts(parts: (string | undefined | null)[]): string {
+  return parts
+    .map(normalizeIdPart)
+    .filter(Boolean)
+    .join(':');
+}
+
 export function buildOpportunityQueue(
   keywords: KeywordRecord[],
   gaps: KeywordGapRecord[],
@@ -68,8 +80,18 @@ export function buildOpportunityQueue(
         recommendedAction = `Target informational/commercial intent (${kw.intent})`;
       }
 
+      const dbCountry = kw.database || kw.country || '';
+      const opportunityId = normalizeIdParts([
+        'content',
+        kw.keyword,
+        dbCountry,
+        pageTarget,
+        cluster,
+        kw.uploadId
+      ]);
+
       items.push({
-        id: kw.id,
+        id: opportunityId,
         type: 'content',
         title: kw.keyword,
         detail,
@@ -97,8 +119,16 @@ export function buildOpportunityQueue(
       ? `Bridge content gap against ${gap.competitorDomain}`
       : 'Optimize content to capture search engine gap';
 
+    const opportunityId = normalizeIdParts([
+      'gap',
+      gap.keyword,
+      gap.competitorDomain || '',
+      gap.yourDomain || '',
+      gap.uploadId
+    ]);
+
     items.push({
-      id: gap.id,
+      id: opportunityId,
       type: 'gap',
       title: gap.keyword,
       detail,
@@ -126,8 +156,16 @@ export function buildOpportunityQueue(
 
       const recommendedAction = `Pitch for backlink from ${sourceDomain} targeting ${bl.targetUrl || 'your site'}`;
 
+      const opportunityId = normalizeIdParts([
+        'backlink',
+        sourceDomain,
+        bl.targetUrl || '',
+        bl.anchorText || '',
+        bl.uploadId
+      ]);
+
       items.push({
-        id: bl.id,
+        id: opportunityId,
         type: 'backlink',
         title: `Backlink Opportunity from ${sourceDomain}`,
         detail,
@@ -151,8 +189,15 @@ export function buildOpportunityQueue(
       const detail = `Title: "${cp.title || 'N/A'}" | Domain: ${cp.domain} | URL: ${cp.url}`;
       const recommendedAction = `Create competing content for keyword targets (${cp.keywords ?? 0} keywords)`;
 
+      const opportunityId = normalizeIdParts([
+        'competitor',
+        cp.domain,
+        cp.url,
+        cp.uploadId
+      ]);
+
       items.push({
-        id: cp.id,
+        id: opportunityId,
         type: 'competitor',
         title: cp.title || cp.url || 'Competitor Page',
         detail,
@@ -179,13 +224,12 @@ export function buildOpportunityQueue(
     return a.id.localeCompare(b.id);
   });
 
-  // Deduplicate: same type + title -> keep the one with higher score (first one in sorted list)
+  // Deduplicate: same ID -> keep the one with higher score (first one in sorted list)
   const seen = new Set<string>();
   const deduped: OpportunityQueueItem[] = [];
   for (const item of sorted) {
-    const key = `${item.type}:${item.title.toLowerCase().trim()}`;
-    if (!seen.has(key)) {
-      seen.add(key);
+    if (!seen.has(item.id)) {
+      seen.add(item.id);
       deduped.push(item);
     }
   }

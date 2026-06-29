@@ -8,6 +8,13 @@ import type { UploadRecord, KeywordRecord, BacklinkRecord, CompetitorPageRecord,
 import Card from '@/components/Card';
 import { buildOpportunityQueue } from '@/lib/opportunity-queue';
 import { BarChart2, Search } from 'lucide-react';
+import type { OpportunityWorkflowStatus } from '@/lib/opportunity-workflow';
+import {
+  WORKFLOW_STATUSES,
+  STATUS_COLORS,
+  getOpportunityWorkflowMap,
+  saveOpportunityWorkflowMap
+} from '@/lib/opportunity-workflow';
 
 export default function DashboardPage() {
   const [uploads, setUploads] = useState<UploadRecord[]>([]);
@@ -20,9 +27,15 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'all' | 'content' | 'gap' | 'backlink' | 'competitor'>('all');
 
+  const [workflowMap, setWorkflowMap] = useState<Record<string, OpportunityWorkflowStatus>>({});
+  const [statusFilter, setStatusFilter] = useState<'Active' | OpportunityWorkflowStatus | 'All'>('Active');
+
   useEffect(() => {
     const site = getSelectedSite();
     setSelectedSiteState(site);
+
+    const map = getOpportunityWorkflowMap();
+    setWorkflowMap(map);
 
     Promise.all([
       db.getUploads(),
@@ -36,6 +49,12 @@ export default function DashboardPage() {
       setCompetitors(cp); setGaps(kg); setDedupeReports(dr);
     }).finally(() => setLoading(false));
   }, []);
+
+  const handleStatusChange = (id: string, newStatus: OpportunityWorkflowStatus) => {
+    const updated = { ...workflowMap, [id]: newStatus };
+    setWorkflowMap(updated);
+    saveOpportunityWorkflowMap(updated);
+  };
 
   const selectedProjectId = getSelectedProjectId();
   const scopedUploads = selectedProjectId
@@ -54,6 +73,92 @@ export default function DashboardPage() {
   const queue = useMemo(() => {
     return buildOpportunityQueue(scopedKeywords, scopedGaps, scopedBacklinks, scopedCompetitors);
   }, [scopedKeywords, scopedGaps, scopedBacklinks, scopedCompetitors]);
+
+  const enrichedQueue = useMemo(() => {
+    return queue.map((item) => ({
+      ...item,
+      status: workflowMap[item.id] || 'New',
+    }));
+  }, [queue, workflowMap]);
+
+  const filteredQueue = useMemo(() => {
+    return enrichedQueue.filter((item) => {
+      // 1. Type filtering
+      if (activeTab !== 'all' && item.type !== activeTab) {
+        return false;
+      }
+      // 2. Status filtering
+      if (statusFilter === 'Active') {
+        return item.status === 'New' || item.status === 'Planned' || item.status === 'In Progress';
+      }
+      if (statusFilter !== 'All') {
+        return item.status === statusFilter;
+      }
+      return true;
+    });
+  }, [enrichedQueue, activeTab, statusFilter]);
+
+  const statusCounts = useMemo(() => {
+    const baseList = activeTab === 'all' ? enrichedQueue : enrichedQueue.filter((x) => x.type === activeTab);
+    const counts = {
+      Active: 0,
+      New: 0,
+      Planned: 0,
+      'In Progress': 0,
+      Done: 0,
+      Ignored: 0,
+      All: baseList.length,
+    };
+    for (const item of baseList) {
+      counts[item.status]++;
+      if (item.status === 'New' || item.status === 'Planned' || item.status === 'In Progress') {
+        counts.Active++;
+      }
+    }
+    return counts;
+  }, [enrichedQueue, activeTab]);
+
+  const typeCounts = useMemo(() => {
+    const filterFn = (item: typeof enrichedQueue[0]) => {
+      if (statusFilter === 'Active') {
+        return item.status === 'New' || item.status === 'Planned' || item.status === 'In Progress';
+      }
+      if (statusFilter !== 'All') {
+        return item.status === statusFilter;
+      }
+      return true;
+    };
+    const filtered = enrichedQueue.filter(filterFn);
+    return {
+      all: filtered.length,
+      content: filtered.filter((x) => x.type === 'content').length,
+      gap: filtered.filter((x) => x.type === 'gap').length,
+      backlink: filtered.filter((x) => x.type === 'backlink').length,
+      competitor: filtered.filter((x) => x.type === 'competitor').length,
+    };
+  }, [enrichedQueue, statusFilter]);
+
+  const { totalActive, totalInProgress, totalDone } = useMemo(() => {
+    let active = 0;
+    let inProgress = 0;
+    let done = 0;
+    for (const item of enrichedQueue) {
+      if (item.status === 'New' || item.status === 'Planned' || item.status === 'In Progress') {
+        active++;
+      }
+      if (item.status === 'In Progress') {
+        inProgress++;
+      }
+      if (item.status === 'Done') {
+        done++;
+      }
+    }
+    return { totalActive: active, totalInProgress: inProgress, totalDone: done };
+  }, [enrichedQueue]);
+
+  const topItems = useMemo(() => {
+    return filteredQueue.slice(0, 10);
+  }, [filteredQueue]);
 
   return (
     <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
@@ -100,20 +205,29 @@ export default function DashboardPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
           <div>
             <h2 style={{ fontSize: '1.1rem', fontWeight: 600, margin: 0 }}>Opportunity Queue</h2>
-            <p style={{ color: 'var(--muted)', fontSize: '0.8rem', marginTop: '0.15rem' }}>
+            <p style={{ color: 'var(--muted)', fontSize: '0.8rem', marginTop: '0.15rem', marginBottom: '0.4rem' }}>
               Prioritized action items generated from keyword, gap, competitor page, and backlink data.
             </p>
+            {!loading && uploads.length > 0 && queue.length > 0 && (
+              <div style={{ display: 'flex', gap: '0.85rem', fontSize: '0.75rem', color: 'var(--muted)', flexWrap: 'wrap', alignItems: 'center' }}>
+                <span>Active: <strong style={{ color: 'var(--foreground)' }}>{totalActive}</strong></span>
+                <span style={{ color: 'var(--card-border)' }}>|</span>
+                <span>In Progress: <strong style={{ color: 'var(--warning)' }}>{totalInProgress}</strong></span>
+                <span style={{ color: 'var(--card-border)' }}>|</span>
+                <span>Done: <strong style={{ color: 'var(--success)' }}>{totalDone}</strong></span>
+              </div>
+            )}
           </div>
 
           {!loading && uploads.length > 0 && queue.length > 0 && (
             <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
               {(
                 [
-                  { id: 'all', label: 'All', count: queue.length },
-                  { id: 'content', label: 'Content', count: queue.filter((x) => x.type === 'content').length },
-                  { id: 'gap', label: 'Keyword Gaps', count: queue.filter((x) => x.type === 'gap').length },
-                  { id: 'backlink', label: 'Backlinks', count: queue.filter((x) => x.type === 'backlink').length },
-                  { id: 'competitor', label: 'Competitors', count: queue.filter((x) => x.type === 'competitor').length },
+                  { id: 'all', label: 'All', count: typeCounts.all },
+                  { id: 'content', label: 'Content', count: typeCounts.content },
+                  { id: 'gap', label: 'Keyword Gaps', count: typeCounts.gap },
+                  { id: 'backlink', label: 'Backlinks', count: typeCounts.backlink },
+                  { id: 'competitor', label: 'Competitors', count: typeCounts.competitor },
                 ] as const
               ).map((tabOption) => {
                 const isActive = activeTab === tabOption.id;
@@ -142,6 +256,72 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
+
+        {/* Filter bar for Status */}
+        {!loading && uploads.length > 0 && queue.length > 0 && (
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            paddingBottom: '0.75rem',
+            borderBottom: '1px solid var(--card-border)',
+            marginBottom: '1rem',
+            flexWrap: 'wrap',
+            gap: '0.75rem'
+          }}>
+            <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--muted)', marginRight: '0.35rem', fontWeight: 500 }}>Status:</span>
+              {(
+                [
+                  { id: 'Active', label: 'Active' },
+                  { id: 'New', label: 'New' },
+                  { id: 'Planned', label: 'Planned' },
+                  { id: 'In Progress', label: 'In Progress' },
+                  { id: 'Done', label: 'Done' },
+                  { id: 'Ignored', label: 'Ignored' },
+                  { id: 'All', label: 'All' },
+                ] as const
+              ).map((statusOption) => {
+                const isActive = statusFilter === statusOption.id;
+                const count = statusCounts[statusOption.id];
+
+                let activeBorder = 'var(--accent)';
+                let activeBg = 'var(--accent)';
+                let activeColor = '#fff';
+
+                if (isActive) {
+                  if (statusOption.id === 'New') { activeBg = 'rgba(99, 102, 241, 0.12)'; activeColor = 'var(--accent)'; activeBorder = 'var(--accent)'; }
+                  else if (statusOption.id === 'Planned') { activeBg = 'rgba(56, 189, 248, 0.12)'; activeColor = '#38bdf8'; activeBorder = '#38bdf8'; }
+                  else if (statusOption.id === 'In Progress') { activeBg = 'rgba(245, 158, 11, 0.12)'; activeColor = 'var(--warning)'; activeBorder = 'var(--warning)'; }
+                  else if (statusOption.id === 'Done') { activeBg = 'rgba(16, 185, 129, 0.12)'; activeColor = 'var(--success)'; activeBorder = 'var(--success)'; }
+                  else if (statusOption.id === 'Ignored') { activeBg = 'rgba(100, 116, 139, 0.12)'; activeColor = 'var(--muted)'; activeBorder = 'var(--muted)'; }
+                }
+
+                return (
+                  <button
+                    key={statusOption.id}
+                    onClick={() => setStatusFilter(statusOption.id)}
+                    style={{
+                      padding: '0.25rem 0.65rem',
+                      borderRadius: '15px',
+                      border: '1px solid',
+                      borderColor: isActive ? activeBorder : 'var(--card-border)',
+                      background: isActive ? activeBg : 'transparent',
+                      color: isActive ? activeColor : 'var(--muted)',
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      outline: 'none',
+                    }}
+                  >
+                    {statusOption.label} <span style={{ opacity: 0.7, marginLeft: '0.15rem', fontWeight: 400 }}>({count})</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {loading ? (
           <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--muted)', fontSize: '0.875rem' }}>
@@ -190,136 +370,196 @@ export default function DashboardPage() {
               The active project scope <strong>{scopeLabel}</strong> has no eligible opportunities. Try uploading keyword gap, competitor, backlink, or high-scoring keyword reports and assign them to this project.
             </p>
           </div>
+        ) : filteredQueue.length === 0 ? (
+          <div style={{ padding: '2.5rem', textAlign: 'center', background: 'rgba(255,255,255,0.01)', borderRadius: '8px', border: '1px dashed var(--card-border)' }}>
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '48px',
+              height: '48px',
+              borderRadius: '50%',
+              background: 'rgba(99, 102, 241, 0.08)',
+              color: 'var(--accent)',
+              marginBottom: '0.75rem'
+            }}>
+              <Search size={24} />
+            </div>
+            <h4 style={{ fontWeight: 600, fontSize: '0.95rem', marginBottom: '0.25rem' }}>No matching opportunities</h4>
+            <p style={{ color: 'var(--muted)', fontSize: '0.82rem', marginBottom: '1.25rem', maxWidth: '400px', margin: '0.25rem auto 1.25rem' }}>
+              Your current filters (Type: <strong>{activeTab === 'all' ? 'All' : activeTab === 'content' ? 'Content' : activeTab === 'gap' ? 'Keyword Gaps' : activeTab === 'backlink' ? 'Backlinks' : 'Competitors'}</strong>, Status: <strong>{statusFilter}</strong>) hid all opportunities.
+            </p>
+            <button
+              onClick={() => {
+                setActiveTab('all');
+                setStatusFilter('Active');
+              }}
+              style={{
+                display: 'inline-block',
+                background: 'var(--accent)',
+                color: '#fff',
+                padding: '0.45rem 1.2rem',
+                borderRadius: '6px',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                border: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              Reset Filters
+            </button>
+          </div>
         ) : (
           <>
-            {(() => {
-              const filteredItems = activeTab === 'all' ? queue : queue.filter((x) => x.type === activeTab);
-              const topItems = filteredItems.slice(0, 10);
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', textAlign: 'left', minWidth: '800px' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--card-border)', color: 'var(--muted)', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    <th style={{ padding: '0.6rem 0.5rem', width: '130px' }}>Priority</th>
+                    <th style={{ padding: '0.6rem 0.5rem', width: '220px' }}>Opportunity</th>
+                    <th style={{ padding: '0.6rem 0.5rem', width: '110px' }}>Impact</th>
+                    <th style={{ padding: '0.6rem 0.5rem', width: '120px' }}>Source</th>
+                    <th style={{ padding: '0.6rem 0.5rem' }}>Recommended Action</th>
+                    <th style={{ padding: '0.6rem 0.5rem', width: '140px' }}>Status</th>
+                    <th style={{ padding: '0.6rem 0.5rem', textAlign: 'right', width: '80px' }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topItems.map((item) => {
+                    let prioLabel = 'Low';
+                    let prioColor = 'var(--muted)';
+                    let prioBg = 'rgba(100, 116, 139, 0.1)';
 
-              if (filteredItems.length === 0) {
-                return (
-                  <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--muted)', fontSize: '0.82rem' }}>
-                    No opportunities of type <strong>{activeTab === 'content' ? 'Content' : activeTab === 'gap' ? 'Keyword Gaps' : activeTab === 'backlink' ? 'Backlinks' : 'Competitors'}</strong> in this project scope.
-                  </div>
-                );
-              }
+                    if (item.score >= 70) {
+                      prioLabel = 'High';
+                      prioColor = 'var(--success)';
+                      prioBg = 'rgba(16, 185, 129, 0.12)';
+                    } else if (item.score >= 40) {
+                      prioLabel = 'Medium';
+                      prioColor = 'var(--warning)';
+                      prioBg = 'rgba(245, 158, 11, 0.12)';
+                    }
 
-              return (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', textAlign: 'left', minWidth: '700px' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid var(--card-border)', color: 'var(--muted)', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        <th style={{ padding: '0.6rem 0.5rem', width: '130px' }}>Priority</th>
-                        <th style={{ padding: '0.6rem 0.5rem', width: '220px' }}>Opportunity</th>
-                        <th style={{ padding: '0.6rem 0.5rem', width: '110px' }}>Impact</th>
-                        <th style={{ padding: '0.6rem 0.5rem', width: '120px' }}>Source</th>
-                        <th style={{ padding: '0.6rem 0.5rem' }}>Recommended Action</th>
-                        <th style={{ padding: '0.6rem 0.5rem', textAlign: 'right', width: '80px' }}>Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {topItems.map((item) => {
-                        let prioLabel = 'Low';
-                        let prioColor = 'var(--muted)';
-                        let prioBg = 'rgba(100, 116, 139, 0.1)';
+                    let impactText = '';
+                    if (item.type === 'content' || item.type === 'gap') {
+                      impactText = item.impact > 0 ? `Vol: ${item.impact.toLocaleString()}` : 'Vol: -';
+                    } else if (item.type === 'backlink') {
+                      impactText = `DA: ${item.impact}`;
+                    } else if (item.type === 'competitor') {
+                      impactText = item.impact > 0 ? `Traffic: ${item.impact.toLocaleString()}` : 'Traffic: -';
+                    }
 
-                        if (item.score >= 70) {
-                          prioLabel = 'High';
-                          prioColor = 'var(--success)';
-                          prioBg = 'rgba(16, 185, 129, 0.12)';
-                        } else if (item.score >= 40) {
-                          prioLabel = 'Medium';
-                          prioColor = 'var(--warning)';
-                          prioBg = 'rgba(245, 158, 11, 0.12)';
-                        }
+                    const statusColor = STATUS_COLORS[item.status];
 
-                        let impactText = '';
-                        if (item.type === 'content' || item.type === 'gap') {
-                          impactText = item.impact > 0 ? `Vol: ${item.impact.toLocaleString()}` : 'Vol: -';
-                        } else if (item.type === 'backlink') {
-                          impactText = `DA: ${item.impact}`;
-                        } else if (item.type === 'competitor') {
-                          impactText = item.impact > 0 ? `Traffic: ${item.impact.toLocaleString()}` : 'Traffic: -';
-                        }
-
-                        return (
-                          <tr key={item.id} style={{ borderBottom: '1px solid var(--card-border)', verticalAlign: 'middle' }}>
-                            <td style={{ padding: '0.65rem 0.5rem' }}>
-                              <span style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                padding: '0.2rem 0.5rem',
-                                borderRadius: '4px',
-                                fontSize: '0.72rem',
-                                fontWeight: 600,
-                                color: prioColor,
-                                background: prioBg,
-                              }}>
-                                {prioLabel} <span style={{ opacity: 0.8, marginLeft: '0.25rem', fontWeight: 400 }}>({item.score})</span>
-                              </span>
-                            </td>
-                            <td style={{ padding: '0.65rem 0.5rem', maxWidth: '220px' }}>
-                              <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.title}>
-                                {item.title}
-                              </div>
-                              <div style={{ fontSize: '0.75rem', color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.detail}>
-                                {item.detail}
-                              </div>
-                            </td>
-                            <td style={{ padding: '0.65rem 0.5rem', fontWeight: 500, color: 'var(--foreground)' }}>
-                              {impactText}
-                            </td>
-                            <td style={{ padding: '0.65rem 0.5rem' }}>
-                              <span style={{
-                                display: 'inline-block',
-                                fontSize: '0.72rem',
-                                color: 'var(--muted)',
-                                border: '1px solid var(--card-border)',
-                                borderRadius: '4px',
-                                padding: '0.1rem 0.35rem',
-                                background: 'rgba(255,255,255,0.01)',
-                                maxWidth: '110px',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap'
-                              }} title={item.sourceLabel}>
-                                {item.sourceLabel}
-                              </span>
-                            </td>
-                            <td style={{ padding: '0.65rem 0.5rem', color: 'var(--foreground)', opacity: 0.9 }}>
-                              {item.recommendedAction}
-                            </td>
-                            <td style={{ padding: '0.65rem 0.5rem', textAlign: 'right' }}>
-                              <Link
-                                href={item.href || '#'}
+                    return (
+                      <tr key={item.id} style={{ borderBottom: '1px solid var(--card-border)', verticalAlign: 'middle' }}>
+                        <td style={{ padding: '0.65rem 0.5rem' }}>
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            padding: '0.2rem 0.5rem',
+                            borderRadius: '4px',
+                            fontSize: '0.72rem',
+                            fontWeight: 600,
+                            color: prioColor,
+                            background: prioBg,
+                          }}>
+                            {prioLabel} <span style={{ opacity: 0.8, marginLeft: '0.25rem', fontWeight: 400 }}>({item.score})</span>
+                          </span>
+                        </td>
+                        <td style={{ padding: '0.65rem 0.5rem', maxWidth: '220px' }}>
+                          <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.title}>
+                            {item.title}
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.detail}>
+                            {item.detail}
+                          </div>
+                        </td>
+                        <td style={{ padding: '0.65rem 0.5rem', fontWeight: 500, color: 'var(--foreground)' }}>
+                          {impactText}
+                        </td>
+                        <td style={{ padding: '0.65rem 0.5rem' }}>
+                          <span style={{
+                            display: 'inline-block',
+                            fontSize: '0.72rem',
+                            color: 'var(--muted)',
+                            border: '1px solid var(--card-border)',
+                            borderRadius: '4px',
+                            padding: '0.1rem 0.35rem',
+                            background: 'rgba(255,255,255,0.01)',
+                            maxWidth: '110px',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
+                          }} title={item.sourceLabel}>
+                            {item.sourceLabel}
+                          </span>
+                        </td>
+                        <td style={{ padding: '0.65rem 0.5rem', color: 'var(--foreground)', opacity: 0.9 }}>
+                          {item.recommendedAction}
+                        </td>
+                        <td style={{ padding: '0.65rem 0.5rem' }}>
+                          <select
+                            value={item.status}
+                            onChange={(e) => handleStatusChange(item.id, e.target.value as OpportunityWorkflowStatus)}
+                            style={{
+                              padding: '0.25rem 0.5rem',
+                              borderRadius: '6px',
+                              border: '1px solid var(--card-border)',
+                              color: statusColor.color,
+                              fontSize: '0.75rem',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              outline: 'none',
+                              width: '120px',
+                              boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                              transition: 'all 0.15s ease',
+                              backgroundColor: statusColor.bg,
+                            }}
+                          >
+                            {WORKFLOW_STATUSES.map((status) => (
+                              <option
+                                key={status}
+                                value={status}
                                 style={{
-                                  display: 'inline-block',
-                                  color: 'var(--accent)',
-                                  textDecoration: 'none',
-                                  fontWeight: 600,
-                                  fontSize: '0.75rem',
-                                  padding: '0.25rem 0.5rem',
-                                  borderRadius: '4px',
-                                  background: 'rgba(99, 102, 241, 0.08)',
-                                  transition: 'background 0.2s',
+                                  background: 'var(--card)',
+                                  color: 'var(--foreground)',
                                 }}
                               >
-                                View →
-                              </Link>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                  {filteredItems.length > 10 && (
-                    <div style={{ marginTop: '0.75rem', textAlign: 'center', fontSize: '0.75rem', color: 'var(--muted)' }}>
-                      Showing top 10 of {filteredItems.length} opportunities.
-                    </div>
-                  )}
+                                {status}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td style={{ padding: '0.65rem 0.5rem', textAlign: 'right' }}>
+                          <Link
+                            href={item.href || '#'}
+                            style={{
+                              display: 'inline-block',
+                              color: 'var(--accent)',
+                              textDecoration: 'none',
+                              fontWeight: 600,
+                              fontSize: '0.75rem',
+                              padding: '0.25rem 0.5rem',
+                              borderRadius: '4px',
+                              background: 'rgba(99, 102, 241, 0.08)',
+                              transition: 'background 0.2s',
+                            }}
+                          >
+                            View →
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {filteredQueue.length > 10 && (
+                <div style={{ marginTop: '0.75rem', textAlign: 'center', fontSize: '0.75rem', color: 'var(--muted)' }}>
+                  Showing top 10 of {filteredQueue.length} opportunities.
                 </div>
-              );
-            })()}
+              )}
+            </div>
           </>
         )}
       </div>
