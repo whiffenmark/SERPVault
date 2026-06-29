@@ -380,171 +380,210 @@ export default function UploadPage() {
         Competitor top pages, keyword, organic position, backlink, and gap reports are now all auto-detected from column headers.
       </div>
 
-      {!selectedProjectId ? (
-        <div style={{ background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '1.75rem', marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      {/* Optional Assignment Panel */}
+      {selectedProjectId ? (
+        <div style={{ marginBottom: '1.25rem', fontSize: '0.85rem', color: 'var(--muted)', background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '1rem 1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
           <div>
-            <h2 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '0.4rem', color: 'var(--accent)' }}>Project Required</h2>
-            <p style={{ color: 'var(--muted)', fontSize: '0.85rem', lineHeight: '1.4' }}>
-              Before uploading CSV files, you must associate them with a Project. Please select an existing project or create a new one below.
-            </p>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: projects.length > 0 ? '1fr 1fr' : '1fr', gap: '2rem' }}>
-            {projects.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', borderRight: '1px dashed var(--card-border)', paddingRight: '2rem' }}>
-                <h3 style={{ fontSize: '0.9rem', fontWeight: 600 }}>Select Existing Project</h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  <select
-                    onChange={(e) => {
-                      if (e.target.value) handleSelectProject(e.target.value);
-                    }}
-                    defaultValue=""
-                    style={{
-                      fontSize: '0.82rem',
-                      padding: '0.45rem 0.6rem',
-                      border: '1px solid var(--card-border)',
-                      borderRadius: '6px',
-                      background: 'var(--background)',
-                      color: 'var(--foreground)',
-                      cursor: 'pointer',
-                      width: '100%',
-                    }}
-                  >
-                    <option value="" disabled>— Select project —</option>
-                    {projects.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} ({p.domain})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+            Target Project:{' '}
+            <strong style={{ color: 'var(--accent)' }}>
+              {projects.find(p => p.id === selectedProjectId)?.name || selectedProjectName || 'Loading...'}
+            </strong>{' '}
+            {projects.find(p => p.id === selectedProjectId)?.domain && (
+              <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>
+                ({projects.find(p => p.id === selectedProjectId)?.domain})
+              </span>
             )}
-
-            <form onSubmit={handleCreateProject} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <h3 style={{ fontSize: '0.9rem', fontWeight: 600 }}>Create a New Project</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                <label style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--muted)' }}>Project Name *</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Acme Corp Web"
-                  required
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  style={{
-                    fontSize: '0.8rem',
-                    padding: '0.45rem 0.6rem',
-                    border: '1px solid var(--card-border)',
-                    borderRadius: '6px',
-                    background: 'var(--background)',
-                    color: 'var(--foreground)',
-                  }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                <label style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--muted)' }}>Owned Domain *</label>
-                <input
-                  type="text"
-                  placeholder="e.g. acme.com"
-                  required
-                  value={newDomain}
-                  onChange={(e) => setNewDomain(e.target.value)}
-                  style={{
-                    fontSize: '0.8rem',
-                    padding: '0.45rem 0.6rem',
-                    border: '1px solid var(--card-border)',
-                    borderRadius: '6px',
-                    background: 'var(--background)',
-                    color: 'var(--foreground)',
-                  }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                  <label style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--muted)' }}>Location (Opt.)</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. US"
-                    value={newLocation}
-                    onChange={(e) => setNewLocation(e.target.value)}
-                    style={{
-                      fontSize: '0.8rem',
-                      padding: '0.45rem 0.6rem',
-                      border: '1px solid var(--card-border)',
-                      borderRadius: '6px',
-                      background: 'var(--background)',
-                      color: 'var(--foreground)',
-                    }}
-                  />
-                </div>
-
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                  <label style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--muted)' }}>Niche (Opt.)</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. SaaS"
-                    value={newNiche}
-                    onChange={(e) => setNewNiche(e.target.value)}
-                    style={{
-                      fontSize: '0.8rem',
-                      padding: '0.45rem 0.6rem',
-                      border: '1px solid var(--card-border)',
-                      borderRadius: '6px',
-                      background: 'var(--background)',
-                      color: 'var(--foreground)',
-                    }}
-                  />
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={isCreatingProject || !newName.trim() || !newDomain.trim()}
-                style={{
-                  fontSize: '0.82rem',
-                  padding: '0.5rem',
-                  background: isCreatingProject ? 'var(--card-border)' : 'var(--accent)',
-                  color: isCreatingProject ? 'var(--muted)' : '#fff',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: isCreatingProject ? 'not-allowed' : 'pointer',
-                  fontWeight: 600,
-                  marginTop: '0.5rem',
-                }}
-              >
-                {isCreatingProject ? 'Creating...' : 'Create & Select Project'}
-              </button>
-            </form>
           </div>
+          <button
+            onClick={() => {
+              setSelectedProjectId(null);
+              setStorageSelectedProjectId(null);
+              window.location.reload();
+            }}
+            style={{
+              background: 'none',
+              border: '1px solid var(--card-border)',
+              borderRadius: '6px',
+              color: 'var(--muted)',
+              cursor: 'pointer',
+              fontSize: '0.75rem',
+              padding: '0.35rem 0.75rem',
+              fontWeight: 500,
+              transition: 'all 0.15s ease',
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.color = 'var(--foreground)';
+              e.currentTarget.style.borderColor = 'var(--accent)';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.color = 'var(--muted)';
+              e.currentTarget.style.borderColor = 'var(--card-border)';
+            }}
+          >
+            Switch to All Projects (Unassigned)
+          </button>
         </div>
       ) : (
-        <>
-          <div style={{ marginBottom: '1rem', fontSize: '0.85rem', color: 'var(--muted)', background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '6px', padding: '0.5rem 0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>Uploading to project: <strong style={{ color: 'var(--accent)' }}>{selectedProjectName}</strong></span>
-            <button
-              onClick={() => {
-                setSelectedProjectId(null);
-                setStorageSelectedProjectId(null);
-                window.location.reload();
-              }}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--accent)',
-                cursor: 'pointer',
-                fontSize: '0.75rem',
-                textDecoration: 'underline',
-                padding: 0,
-              }}
-            >
-              Change Project
-            </button>
+        <div style={{ marginBottom: '1.25rem', background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
+            <div style={{ flex: '1', minWidth: '280px' }}>
+              <h2 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.3rem', color: 'var(--foreground)' }}>
+                Uploading to: <span style={{ color: 'var(--accent)' }}>All Projects / Unassigned research</span>
+              </h2>
+              <p style={{ color: 'var(--muted)', fontSize: '0.8rem', lineHeight: '1.4', margin: 0 }}>
+                Ideal for raw keyword, backlink, or SEO research. You can organize these uploads into specific projects/sites at any time.
+              </p>
+            </div>
+
+            {projects.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', minWidth: '220px' }}>
+                <label style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Assign Uploads to Project
+                </label>
+                <select
+                  onChange={(e) => {
+                    if (e.target.value) handleSelectProject(e.target.value);
+                  }}
+                  defaultValue=""
+                  style={{
+                    fontSize: '0.82rem',
+                    padding: '0.45rem 0.6rem',
+                    border: '1px solid var(--card-border)',
+                    borderRadius: '6px',
+                    background: 'var(--background)',
+                    color: 'var(--foreground)',
+                    cursor: 'pointer',
+                    width: '100%',
+                    outline: 'none',
+                  }}
+                >
+                  <option value="" disabled>— Select project —</option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.domain})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
-          <UploadZone onFiles={processFiles} loading={loading} />
-        </>
+
+          <div style={{ borderTop: '1px dashed var(--card-border)', paddingTop: '0.75rem' }}>
+            <details style={{ cursor: 'pointer' }}>
+              <summary style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--muted)', userSelect: 'none', display: 'list-item' }}>
+                Create a New Project (Optional)
+              </summary>
+              <div style={{ cursor: 'default', marginTop: '0.75rem' }} onClick={(e) => e.stopPropagation()}>
+                <form onSubmit={handleCreateProject} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxWidth: '600px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                      <label style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--muted)' }}>Project Name *</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Acme Corp Web"
+                        required
+                        value={newName}
+                        onChange={(e) => setNewName(e.target.value)}
+                        style={{
+                          fontSize: '0.8rem',
+                          padding: '0.45rem 0.6rem',
+                          border: '1px solid var(--card-border)',
+                          borderRadius: '6px',
+                          background: 'var(--background)',
+                          color: 'var(--foreground)',
+                          outline: 'none',
+                        }}
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                      <label style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--muted)' }}>Owned Domain *</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. acme.com"
+                        required
+                        value={newDomain}
+                        onChange={(e) => setNewDomain(e.target.value)}
+                        style={{
+                          fontSize: '0.8rem',
+                          padding: '0.45rem 0.6rem',
+                          border: '1px solid var(--card-border)',
+                          borderRadius: '6px',
+                          background: 'var(--background)',
+                          color: 'var(--foreground)',
+                          outline: 'none',
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                      <label style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--muted)' }}>Location (Optional)</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. US"
+                        value={newLocation}
+                        onChange={(e) => setNewLocation(e.target.value)}
+                        style={{
+                          fontSize: '0.8rem',
+                          padding: '0.45rem 0.6rem',
+                          border: '1px solid var(--card-border)',
+                          borderRadius: '6px',
+                          background: 'var(--background)',
+                          color: 'var(--foreground)',
+                          outline: 'none',
+                        }}
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                      <label style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--muted)' }}>Niche (Optional)</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. SaaS"
+                        value={newNiche}
+                        onChange={(e) => setNewNiche(e.target.value)}
+                        style={{
+                          fontSize: '0.8rem',
+                          padding: '0.45rem 0.6rem',
+                          border: '1px solid var(--card-border)',
+                          borderRadius: '6px',
+                          background: 'var(--background)',
+                          color: 'var(--foreground)',
+                          outline: 'none',
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isCreatingProject || !newName.trim() || !newDomain.trim()}
+                    style={{
+                      fontSize: '0.82rem',
+                      padding: '0.5rem 1.25rem',
+                      background: isCreatingProject ? 'var(--card-border)' : 'var(--accent)',
+                      color: isCreatingProject ? 'var(--muted)' : '#fff',
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: isCreatingProject ? 'not-allowed' : 'pointer',
+                      fontWeight: 600,
+                      alignSelf: 'flex-start',
+                      marginTop: '0.25rem',
+                    }}
+                  >
+                    {isCreatingProject ? 'Creating...' : 'Create & Select Project'}
+                  </button>
+                </form>
+              </div>
+            </details>
+          </div>
+        </div>
       )}
+
+      {/* UploadZone is always rendered and visible */}
+      <UploadZone onFiles={processFiles} loading={loading} />
 
       {results.length > 0 && (
         <div style={{ marginTop: '2rem' }}>
