@@ -1,4 +1,7 @@
 import type { KeywordRecord, BacklinkRecord, CompetitorPageRecord } from './types';
+import type { OpportunityQueueItem } from './opportunity-queue';
+import type { OpportunityWorkflowStatus } from './opportunity-workflow';
+
 
 function toCSV(rows: Record<string, unknown>[]): string {
   if (rows.length === 0) return '';
@@ -235,4 +238,51 @@ export function exportHermesContentPlanMD(rows: KeywordRecord[], scopeLabel = 'A
   }
 
   download(lines.join('\n'), scopedFilename('hermes-content-plan', 'md', scopeSlug), 'text/markdown');
+}
+
+export function exportWorkflowActionPlanCSV(
+  items: (OpportunityQueueItem & { status: OpportunityWorkflowStatus })[],
+  scopeSlug?: string
+): void {
+  const data = items.map((r) => ({
+    Status: r.status,
+    Type: r.type,
+    Title: r.title,
+    Detail: r.detail,
+    Source: r.sourceLabel,
+    'Recommended Action': r.recommendedAction,
+    Score: r.score,
+    Impact: r.impact,
+    href: r.href ?? '',
+  }));
+  download(toCSV(data), scopedFilename('serpvault-workflow-action-plan', 'csv', scopeSlug));
+}
+
+function cleanMDCell(val: unknown): string {
+  if (val == null) return '-';
+  const str = String(val).trim();
+  if (str === '') return '-';
+  return str.replace(/\|/g, '\\|').replace(/\s+/g, ' ');
+}
+
+export function exportWorkflowActionPlanMD(
+  items: (OpportunityQueueItem & { status: OpportunityWorkflowStatus })[],
+  scopeLabel = 'All Projects',
+  scopeSlug?: string
+): void {
+  const date = new Date().toLocaleDateString();
+  const lines: string[] = [
+    `# SERPVault Workflow Action Plan — ${date}`,
+    '',
+    `**Export Scope:** ${scopeLabel}`,
+    '',
+    '| Status | Type | Title | Detail | Source | Recommended Action | Score | Impact | Link |',
+    '|--------|------|-------|--------|--------|--------------------|-------|--------|------|',
+    ...items.map(
+      (r) =>
+        `| ${cleanMDCell(r.status)} | ${cleanMDCell(r.type)} | ${cleanMDCell(r.title)} | ${cleanMDCell(r.detail)} | ${cleanMDCell(r.sourceLabel)} | ${cleanMDCell(r.recommendedAction)} | ${cleanMDCell(r.score)} | ${cleanMDCell(r.impact)} | ${r.href ? `[View](${r.href})` : '-'} |`
+    ),
+  ];
+
+  download(lines.join('\n'), scopedFilename('serpvault-workflow-action-plan', 'md', scopeSlug), 'text/markdown');
 }

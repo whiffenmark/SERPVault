@@ -15,6 +15,7 @@ const nav = [
   { href: '/backlinks', label: 'Backlink Opportunities', icon: '⛓' },
   { href: '/dedupe', label: 'Dedupe Reports', icon: '⧉' },
   { href: '/content', label: 'Content Opportunities', icon: '✎' },
+  { href: '/action-plan', label: 'Action Plan', icon: '☑' },
   { href: '/export', label: 'Export Center', icon: '⤓' },
   { href: '/settings', label: 'Settings', icon: '⚙' },
 ];
