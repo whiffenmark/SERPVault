@@ -110,9 +110,13 @@ async function commitToStore(
   await db.saveDedupeReport(dedupeReport);
 
   // Persist rows by type
+  let finalCleanedCount = cleaned.length;
+  let dbDuplicates = 0;
   if (reportType === 'keyword' || reportType === 'organic_positions') {
     const mapped = cleaned.map((r) => mapKeyword(r, uploadId)).filter((k) => !isGarbageKeyword(k.keyword));
-    await db.saveKeywords(mapped);
+    const savedCount = await db.saveKeywords(mapped);
+    dbDuplicates = mapped.length - savedCount;
+    finalCleanedCount = savedCount;
   } else if (reportType === 'keyword_gap') {
     await db.saveKeywordGaps(cleaned.map((r) => mapKeywordGap(r, uploadId)));
   } else if (reportType === 'competitor_pages') {
@@ -128,8 +132,8 @@ async function commitToStore(
   return {
     uploadId,
     totalRows: rows.length,
-    cleanedRows: cleaned.length,
-    duplicatesRemoved: report.duplicatesRemoved,
+    cleanedRows: finalCleanedCount,
+    duplicatesRemoved: report.duplicatesRemoved + dbDuplicates,
     issues: report.issues,
   };
 }

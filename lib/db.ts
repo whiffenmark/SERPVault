@@ -300,9 +300,132 @@ export async function saveDedupeReport(r: DedupeReport): Promise<void> {
   await sbInsert('dedupe_reports', [toDrRow(r)]);
 }
 
-export async function saveKeywords(rows: KeywordRecord[]): Promise<void> {
-  updateStore(s => ({ ...s, keywords: [...s.keywords, ...rows] }));
-  await sbInsert('keywords', rows.map(toKwRow));
+// ---------------------------------------------------------------------------
+// Keyword Deduplication Helpers
+// ---------------------------------------------------------------------------
+
+interface UploadInfo {
+  projectId: string;
+  uploadedAt: string;
+}
+
+async function getUploadInfoMap(): Promise<Map<string, UploadInfo>> {
+  const infoMap = new Map<string, UploadInfo>();
+
+  // 1. Local store
+  const store = getStore();
+  if (store && store.uploads) {
+    for (const u of store.uploads) {
+      if (u.id) {
+        infoMap.set(u.id, {
+          projectId: u.projectId || 'unassigned',
+          uploadedAt: u.uploadedAt || '',
+        });
+      }
+    }
+  }
+
+  // 2. Supabase if configured
+  const sb = getSupabase();
+  if (sb) {
+    try {
+      const { data, error } = await sb.from('uploads').select('id, project_id, uploaded_at');
+      if (data && !error) {
+        for (const row of data) {
+          if (row.id) {
+            infoMap.set(row.id, {
+              projectId: row.project_id || 'unassigned',
+              uploadedAt: row.uploaded_at || '',
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[db] failed to fetch uploads for info map:', e);
+    }
+  }
+
+  return infoMap;
+}
+
+function getKeywordIdentity(k: KeywordRecord, uploadInfoMap: Map<string, UploadInfo>): string {
+  const kw = (k.keyword || '').toLowerCase().trim().replace(/\s+/g, ' ');
+  const db = (k.database || '').toLowerCase().trim();
+  const country = (k.country || '').toLowerCase().trim();
+
+  let rawLoc = '';
+  if (k.raw) {
+    const locationKeys = ['database', 'country', 'location', 'market'];
+    for (const key of Object.keys(k.raw)) {
+      const lowerKey = key.toLowerCase();
+      if (locationKeys.some(lk => lowerKey.includes(lk))) {
+        const val = k.raw[key];
+        if (val) {
+          rawLoc = val.toLowerCase().trim();
+          break;
+        }
+      }
+    }
+  }
+
+  const signals = new Set<string>();
+  if (db) signals.add(db);
+  if (country) signals.add(country);
+  if (rawLoc) signals.add(rawLoc);
+
+  const locationSig = Array.from(signals).sort().join('||');
+  const projectId = uploadInfoMap.get(k.uploadId)?.projectId || 'unassigned';
+
+  return `${kw}::${locationSig}::${projectId}`;
+}
+
+export async function saveKeywords(rows: KeywordRecord[]): Promise<number> {
+  const existingKeywords = await getKeywords();
+  const uploadInfoMap = await getUploadInfoMap();
+
+  const existingIdentities = new Set<string>();
+  for (const k of existingKeywords) {
+    existingIdentities.add(getKeywordIdentity(k, uploadInfoMap));
+  }
+
+  const filteredRows: KeywordRecord[] = [];
+  const batchSeen = new Set<string>();
+
+  for (const k of rows) {
+    const idKey = getKeywordIdentity(k, uploadInfoMap);
+    if (!existingIdentities.has(idKey) && !batchSeen.has(idKey)) {
+      batchSeen.add(idKey);
+      filteredRows.push(k);
+    }
+  }
+
+  const finalSavedCount = filteredRows.length;
+
+  if (rows.length > 0) {
+    const uploadId = rows[0].uploadId;
+
+    // Update local store upload cleanedRowCount
+    updateStore(s => ({
+      ...s,
+      uploads: s.uploads.map(u => u.id === uploadId ? { ...u, cleanedRowCount: finalSavedCount } : u)
+    }));
+
+    // Update Supabase upload cleanedRowCount
+    const sb = getSupabase();
+    if (sb) {
+      try {
+        await sb.from('uploads').update({ cleaned_row_count: finalSavedCount }).eq('id', uploadId);
+      } catch (err) {
+        console.error('[db] failed to update upload cleaned_row_count in Supabase:', err);
+      }
+    }
+  }
+
+  if (finalSavedCount === 0) return 0;
+
+  updateStore(s => ({ ...s, keywords: [...s.keywords, ...filteredRows] }));
+  await sbInsert('keywords', filteredRows.map(toKwRow));
+  return finalSavedCount;
 }
 
 export async function saveKeywordGaps(rows: KeywordGapRecord[]): Promise<void> {
@@ -461,12 +584,73 @@ export async function getUploads(): Promise<UploadRecord[]> {
 
 export async function getKeywords(): Promise<KeywordRecord[]> {
   const sb = getSupabase();
+  let allKeywords: KeywordRecord[] = [];
+
   if (sb) {
-    const { data, error } = await sb.from('keywords').select('*').order('opportunity_score', { ascending: false, nullsFirst: false });
-    if (data && !error) return data.map(fromKwRow);
-    console.error('[db] getKeywords:', error?.message);
+    try {
+      const { data, error } = await sb.from('keywords').select('*').order('opportunity_score', { ascending: false, nullsFirst: false });
+      if (data && !error) {
+        allKeywords = data.map(fromKwRow);
+      } else {
+        console.error('[db] getKeywords:', error?.message);
+        allKeywords = getStore().keywords || [];
+      }
+    } catch (e) {
+      console.error('[db] getKeywords exception:', e);
+      allKeywords = getStore().keywords || [];
+    }
+  } else {
+    allKeywords = getStore().keywords || [];
   }
-  return getStore().keywords;
+
+  const uploadInfoMap = await getUploadInfoMap();
+
+  // Sort a copy of allKeywords by upload's uploadedAt (ascending) to keep the first (oldest) inserted row
+  const sortedForDedupe = [...allKeywords].sort((a, b) => {
+    const timeA = uploadInfoMap.get(a.uploadId)?.uploadedAt || '';
+    const timeB = uploadInfoMap.get(b.uploadId)?.uploadedAt || '';
+    return timeA.localeCompare(timeB);
+  });
+
+  const seenIdentities = new Set<string>();
+  const duplicateIdsToDelete = new Set<string>();
+
+  for (const k of sortedForDedupe) {
+    const idKey = getKeywordIdentity(k, uploadInfoMap);
+    if (seenIdentities.has(idKey)) {
+      duplicateIdsToDelete.add(k.id);
+    } else {
+      seenIdentities.add(idKey);
+    }
+  }
+
+  if (duplicateIdsToDelete.size > 0) {
+    // Update localStorage keywords to remove duplicates
+    updateStore(s => ({
+      ...s,
+      keywords: (s.keywords || []).filter(k => !duplicateIdsToDelete.has(k.id))
+    }));
+
+    // Delete duplicate keyword row IDs from Supabase database
+    if (sb) {
+      try {
+        const ids = Array.from(duplicateIdsToDelete);
+        for (const batch of chunk(ids, 100)) {
+          const { error } = await sb.from('keywords').delete().in('id', batch);
+          if (error) {
+            console.error('[db] failed to delete duplicate keywords from Supabase:', error.message);
+          }
+        }
+      } catch (err) {
+        console.error('[db] exception during Supabase delete of duplicate keywords:', err);
+      }
+    }
+
+    // Return filtered allKeywords to match current return behavior but clean
+    return allKeywords.filter(k => !duplicateIdsToDelete.has(k.id));
+  }
+
+  return allKeywords;
 }
 
 export async function getKeywordGaps(): Promise<KeywordGapRecord[]> {
