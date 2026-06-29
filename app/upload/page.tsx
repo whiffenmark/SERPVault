@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import UploadZone from '@/components/UploadZone';
 import { parseCSV } from '@/lib/parse-csv';
 import { detectReportType } from '@/lib/detect-report-type';
@@ -16,7 +16,8 @@ import {
   isGarbageKeyword,
 } from '@/lib/map-rows';
 import * as db from '@/lib/db';
-import type { ReportType, UploadRecord, DedupeReport } from '@/lib/types';
+import type { ReportType, UploadRecord, DedupeReport, ProjectRecord } from '@/lib/types';
+import { getSelectedProjectId, getStore, setSelectedProjectId as setStorageSelectedProjectId } from '@/lib/storage';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -82,7 +83,8 @@ const ALL_TYPES: ReportType[] = [
 async function commitToStore(
   rows: Record<string, string>[],
   reportType: ReportType,
-  filename: string
+  filename: string,
+  projectId?: string
 ): Promise<{
   uploadId: string;
   totalRows: number;
@@ -100,6 +102,7 @@ async function commitToStore(
     rowCount: rows.length,
     cleanedRowCount: cleaned.length,
     dedupeReportId: dedupeReport.id,
+    projectId,
   };
 
   // Persist upload + dedupe report
@@ -139,6 +142,74 @@ export default function UploadPage() {
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<FileResult[]>([]);
 
+  // Project selection & creation states
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [selectedProjectName, setSelectedProjectName] = useState<string>('');
+  const [projects, setProjects] = useState<ProjectRecord[]>([]);
+
+  // Form states for new project
+  const [newName, setNewName] = useState('');
+  const [newDomain, setNewDomain] = useState('');
+  const [newLocation, setNewLocation] = useState('');
+  const [newNiche, setNewNiche] = useState('');
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
+
+  const refreshProjects = async () => {
+    const projs = await db.getProjects();
+    setProjects(projs);
+    const projId = getSelectedProjectId();
+    setSelectedProjectId(projId);
+    const proj = projs.find(p => p.id === projId);
+    setSelectedProjectName(proj ? proj.name : '');
+  };
+
+  useEffect(() => {
+    refreshProjects();
+  }, []);
+
+  const handleSelectProject = (id: string) => {
+    setSelectedProjectId(id);
+    setStorageSelectedProjectId(id);
+    window.location.reload();
+  };
+
+  const handleCreateProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newName.trim() || !newDomain.trim()) return;
+
+    setIsCreatingProject(true);
+    try {
+      const projectId = 'proj_' + nanoid();
+      let cleanedDomain = newDomain.trim().toLowerCase();
+      cleanedDomain = cleanedDomain.replace(/^(https?:\/\/)?(www\.)?/, '').split('/')[0].split(':')[0];
+
+      const newProject: ProjectRecord = {
+        id: projectId,
+        name: newName.trim(),
+        domain: cleanedDomain,
+        location: newLocation.trim() || undefined,
+        niche: newNiche.trim() || undefined,
+        createdAt: new Date().toISOString(),
+      };
+
+      await db.saveProject(newProject, []);
+
+      setNewName('');
+      setNewDomain('');
+      setNewLocation('');
+      setNewNiche('');
+
+      // Select the new project
+      setSelectedProjectId(projectId);
+      setStorageSelectedProjectId(projectId);
+      window.location.reload();
+    } catch (err) {
+      console.error('Error creating project:', err);
+    } finally {
+      setIsCreatingProject(false);
+    }
+  };
+
   const updateResult = useCallback(
     (id: string, patch: Partial<FileResult>) =>
       setResults((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r))),
@@ -150,6 +221,7 @@ export default function UploadPage() {
     async (files: File[]) => {
       setLoading(true);
       const newResults: FileResult[] = [];
+      const currentProjectId = getSelectedProjectId();
 
       for (const file of files) {
         const baseResult: Omit<FileResult, 'status' | 'detectedType' | 'selectedType'> = {
@@ -191,7 +263,7 @@ export default function UploadPage() {
 
           if (detectedType !== 'unknown' && detectedType !== 'keyword') {
             // Auto-import known types (except keyword which gets health-check review)
-            const imported = await commitToStore(rows, detectedType, file.name);
+            const imported = await commitToStore(rows, detectedType, file.name, currentProjectId || undefined);
             newResults.push({ ...result, status: 'imported', ...imported });
           } else if (detectedType === 'keyword') {
             // Compute health checks for keyword report review before storing
@@ -251,7 +323,8 @@ export default function UploadPage() {
     async (id: string) => {
       const result = results.find((r) => r.id === id);
       if (!result || result.selectedType === 'unknown') return;
-      const imported = await commitToStore(result.rows, result.selectedType, result.filename);
+      const currentProjectId = getSelectedProjectId();
+      const imported = await commitToStore(result.rows, result.selectedType, result.filename, currentProjectId || undefined);
       updateResult(id, {
         status: 'imported',
         detectedType: result.selectedType,
@@ -268,8 +341,14 @@ export default function UploadPage() {
     async (id: string, newType: ReportType) => {
       const result = results.find((r) => r.id === id);
       if (!result || !result.uploadId || newType === 'unknown') return;
+
+      // Preserve project association
+      const store = getStore();
+      const oldUpload = store.uploads.find((u) => u.id === result.uploadId);
+      const projectId = oldUpload?.projectId;
+
       await db.deleteUpload(result.uploadId);
-      const imported = await commitToStore(result.rows, newType, result.filename);
+      const imported = await commitToStore(result.rows, newType, result.filename, projectId);
       updateResult(id, {
         status: 'imported',
         selectedType: newType,
@@ -301,7 +380,171 @@ export default function UploadPage() {
         Competitor top pages, keyword, organic position, backlink, and gap reports are now all auto-detected from column headers.
       </div>
 
-      <UploadZone onFiles={processFiles} loading={loading} />
+      {!selectedProjectId ? (
+        <div style={{ background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '1.75rem', marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          <div>
+            <h2 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '0.4rem', color: 'var(--accent)' }}>Project Required</h2>
+            <p style={{ color: 'var(--muted)', fontSize: '0.85rem', lineHeight: '1.4' }}>
+              Before uploading CSV files, you must associate them with a Project. Please select an existing project or create a new one below.
+            </p>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: projects.length > 0 ? '1fr 1fr' : '1fr', gap: '2rem' }}>
+            {projects.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', borderRight: '1px dashed var(--card-border)', paddingRight: '2rem' }}>
+                <h3 style={{ fontSize: '0.9rem', fontWeight: 600 }}>Select Existing Project</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <select
+                    onChange={(e) => {
+                      if (e.target.value) handleSelectProject(e.target.value);
+                    }}
+                    defaultValue=""
+                    style={{
+                      fontSize: '0.82rem',
+                      padding: '0.45rem 0.6rem',
+                      border: '1px solid var(--card-border)',
+                      borderRadius: '6px',
+                      background: 'var(--background)',
+                      color: 'var(--foreground)',
+                      cursor: 'pointer',
+                      width: '100%',
+                    }}
+                  >
+                    <option value="" disabled>— Select project —</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} ({p.domain})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
+            <form onSubmit={handleCreateProject} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <h3 style={{ fontSize: '0.9rem', fontWeight: 600 }}>Create a New Project</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <label style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--muted)' }}>Project Name *</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Acme Corp Web"
+                  required
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  style={{
+                    fontSize: '0.8rem',
+                    padding: '0.45rem 0.6rem',
+                    border: '1px solid var(--card-border)',
+                    borderRadius: '6px',
+                    background: 'var(--background)',
+                    color: 'var(--foreground)',
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <label style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--muted)' }}>Owned Domain *</label>
+                <input
+                  type="text"
+                  placeholder="e.g. acme.com"
+                  required
+                  value={newDomain}
+                  onChange={(e) => setNewDomain(e.target.value)}
+                  style={{
+                    fontSize: '0.8rem',
+                    padding: '0.45rem 0.6rem',
+                    border: '1px solid var(--card-border)',
+                    borderRadius: '6px',
+                    background: 'var(--background)',
+                    color: 'var(--foreground)',
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <label style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--muted)' }}>Location (Opt.)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. US"
+                    value={newLocation}
+                    onChange={(e) => setNewLocation(e.target.value)}
+                    style={{
+                      fontSize: '0.8rem',
+                      padding: '0.45rem 0.6rem',
+                      border: '1px solid var(--card-border)',
+                      borderRadius: '6px',
+                      background: 'var(--background)',
+                      color: 'var(--foreground)',
+                    }}
+                  />
+                </div>
+
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <label style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--muted)' }}>Niche (Opt.)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. SaaS"
+                    value={newNiche}
+                    onChange={(e) => setNewNiche(e.target.value)}
+                    style={{
+                      fontSize: '0.8rem',
+                      padding: '0.45rem 0.6rem',
+                      border: '1px solid var(--card-border)',
+                      borderRadius: '6px',
+                      background: 'var(--background)',
+                      color: 'var(--foreground)',
+                    }}
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isCreatingProject || !newName.trim() || !newDomain.trim()}
+                style={{
+                  fontSize: '0.82rem',
+                  padding: '0.5rem',
+                  background: isCreatingProject ? 'var(--card-border)' : 'var(--accent)',
+                  color: isCreatingProject ? 'var(--muted)' : '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: isCreatingProject ? 'not-allowed' : 'pointer',
+                  fontWeight: 600,
+                  marginTop: '0.5rem',
+                }}
+              >
+                {isCreatingProject ? 'Creating...' : 'Create & Select Project'}
+              </button>
+            </form>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div style={{ marginBottom: '1rem', fontSize: '0.85rem', color: 'var(--muted)', background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '6px', padding: '0.5rem 0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>Uploading to project: <strong style={{ color: 'var(--accent)' }}>{selectedProjectName}</strong></span>
+            <button
+              onClick={() => {
+                setSelectedProjectId(null);
+                setStorageSelectedProjectId(null);
+                window.location.reload();
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--accent)',
+                cursor: 'pointer',
+                fontSize: '0.75rem',
+                textDecoration: 'underline',
+                padding: 0,
+              }}
+            >
+              Change Project
+            </button>
+          </div>
+          <UploadZone onFiles={processFiles} loading={loading} />
+        </>
+      )}
 
       {results.length > 0 && (
         <div style={{ marginTop: '2rem' }}>

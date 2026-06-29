@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import * as db from '@/lib/db';
-import { filterRowsBySite, getSelectedSite, siteSelectionLabel, type SiteSelection } from '@/lib/storage';
+import { filterRowsBySite, getSelectedSite, siteSelectionLabel, type SiteSelection, getSelectedProjectId } from '@/lib/storage';
 import type { UploadRecord, KeywordRecord, BacklinkRecord, CompetitorPageRecord, KeywordGapRecord, DedupeReport } from '@/lib/types';
 import Card from '@/components/Card';
 
@@ -34,13 +34,18 @@ export default function DashboardPage() {
     }).finally(() => setLoading(false));
   }, []);
 
+  const selectedProjectId = getSelectedProjectId();
+  const scopedUploads = selectedProjectId
+    ? uploads.filter((u) => u.projectId === selectedProjectId)
+    : uploads;
+
   const scopedKeywords = filterRowsBySite(keywords, selectedSite);
   const scopedBacklinks = filterRowsBySite(backlinks, selectedSite);
   const scopedGaps = filterRowsBySite(gaps, selectedSite);
   const scopedCompetitors = filterRowsBySite(competitors, selectedSite);
   const tagged = scopedKeywords.filter((k) => k.tag && k.tag !== 'Ignore');
   const highScore = scopedKeywords.filter((k) => (k.opportunityScore ?? 0) >= 70).length;
-  const recentUploads = uploads.slice(0, 5);
+  const recentUploads = scopedUploads.slice(0, 5);
   const scopeLabel = siteSelectionLabel(selectedSite);
 
   return (
@@ -73,7 +78,7 @@ export default function DashboardPage() {
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-        <Card title="Total Uploads" value={loading ? '…' : uploads.length} sub="CSV files imported" />
+        <Card title="Total Uploads" value={loading ? '…' : scopedUploads.length} sub={selectedSite ? 'in active project' : 'CSV files imported'} />
         <Card title="Keywords" value={loading ? '…' : scopedKeywords.length} sub={selectedSite ? 'in active project' : 'across all reports'} />
         <Card title="Backlinks" value={loading ? '…' : scopedBacklinks.length} sub={selectedSite ? 'in active project' : 'across all reports'} />
         <Card title="Competitor Pages" value={loading ? '…' : scopedCompetitors.length} sub={selectedSite ? 'in active project' : 'indexed'} />

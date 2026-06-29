@@ -1,162 +1,121 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getSelectedSite, setSelectedSite, type SiteSelection, getStore, getRowSiteScope } from '@/lib/storage';
-
-type SiteOption = {
-  key: string;
-  site: SiteSelection;
-  label: string;
-};
+import { getSelectedProjectId, setSelectedProjectId } from '@/lib/storage';
+import { saveProject, deleteProject, getProjects } from '@/lib/db';
+import type { ProjectRecord } from '@/lib/types';
+import { nanoid } from '@/lib/nanoid';
 
 export default function ProjectSiteSelector() {
-  const [selected, setSelected] = useState<SiteSelection>(null);
-  const [options, setOptions] = useState<SiteOption[]>([]);
+  const [projects, setProjects] = useState<ProjectRecord[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
 
-  // Manual form state (used only inside modal)
+  // Form fields for new project
+  const [name, setName] = useState('');
   const [domain, setDomain] = useState('');
   const [location, setLocation] = useState('');
   const [niche, setNiche] = useState('');
-  const [isManualOverride, setIsManualOverride] = useState(false);
+  const [competitorsText, setCompetitorsText] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const knownDomains = Array.from(
-    new Set(
-      options
-        .map((opt) => opt.site?.domain)
-        .filter((d): d is string => !!d && d !== '-')
-    )
-  ).sort((a, b) => a.localeCompare(b));
-
-  const handleDomainSelect = (selectedDomain: string) => {
-    setDomain(selectedDomain);
-
-    // Find available locations and niches for the selected domain
-    const availableLocs = options
-      .filter((opt) => opt.site?.domain === selectedDomain)
-      .map((opt) => opt.site?.location)
-      .filter((l): l is string => !!l);
-    const availableNiches = options
-      .filter((opt) => opt.site?.domain === selectedDomain)
-      .map((opt) => opt.site?.niche)
-      .filter((n): n is string => !!n);
-
-    // Set default location/niche if not already valid/compatible
-    if (location !== '-' && !availableLocs.includes(location)) {
-      setLocation('-');
-    }
-    if (niche !== '-' && !availableNiches.includes(niche)) {
-      setNiche('-');
-    }
+  const refreshProjects = async () => {
+    const projs = await getProjects();
+    setProjects(projs);
   };
 
-  const isSaveDisabled = !isManualOverride
-    ? (!domain || !knownDomains.includes(domain))
-    : !domain.trim();
-
   useEffect(() => {
-    const s = getSelectedSite();
-    setSelected(s);
-    if (s) {
-      setDomain(s.domain);
-      setLocation(s.location);
-      setNiche(s.niche);
+    async function load() {
+      await refreshProjects();
+      setSelectedId(getSelectedProjectId());
     }
-
-    // Auto-generate options from uploaded data
-    const store = getStore();
-    const unique = new Map<string, NonNullable<SiteSelection>>();
-
-    const addFromRows = (rows: any[]) => {
-      rows.forEach((row: any) => {
-        const site = getRowSiteScope(row);
-        if (site.domain && site.domain !== '-') {
-          const key = `${site.domain}|${site.location}|${site.niche}`;
-          if (!unique.has(key)) {
-            unique.set(key, site);
-          }
-        }
-      });
-    };
-
-    addFromRows(store.keywords || []);
-    addFromRows(store.keywordGaps || []);
-    addFromRows(store.competitorPages || []);
-    addFromRows(store.backlinks || []);
-    addFromRows(store.referringDomains || []);
-    addFromRows(store.anchorTexts || []);
-
-    const opts: SiteOption[] = Array.from(unique.values()).map((site) => ({
-      key: `${site.domain}|${site.location}|${site.niche}`,
-      site,
-      label: `${site.domain} / ${site.location} / ${site.niche}`,
-    }));
-
-    opts.sort((a, b) => a.label.localeCompare(b.label));
-    setOptions(opts);
+    load();
   }, []);
 
-  const selectSite = (site: SiteSelection) => {
-    setSelectedSite(site);
-    setSelected(site);
-    if (site) {
-      setDomain(site.domain);
-      setLocation(site.location);
-      setNiche(site.niche);
-    } else {
+  const handleSelectProject = (id: string | null) => {
+    setSelectedProjectId(id);
+    setSelectedId(id);
+    window.location.reload();
+  };
+
+  const handleCreateProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim() || !domain.trim()) return;
+
+    setIsSubmitting(true);
+    try {
+      const projectId = 'proj_' + nanoid();
+
+      // Clean domain name to hostname
+      let cleanedDomain = domain.trim().toLowerCase();
+      cleanedDomain = cleanedDomain.replace(/^(https?:\/\/)?(www\.)?/, '').split('/')[0].split(':')[0];
+
+      const newProject: ProjectRecord = {
+        id: projectId,
+        name: name.trim(),
+        domain: cleanedDomain,
+        location: location.trim() || undefined,
+        niche: niche.trim() || undefined,
+        createdAt: new Date().toISOString(),
+      };
+
+      // Split competitor domains by comma or newline
+      const comps = competitorsText
+        .split(/[\n,]+/)
+        .map((c) => c.trim().toLowerCase())
+        .map((c) => c.replace(/^(https?:\/\/)?(www\.)?/, '').split('/')[0].split(':')[0])
+        .filter((c) => c.length > 0 && c.includes('.'));
+
+      await saveProject(newProject, comps);
+
+      // Reset form fields
+      setName('');
       setDomain('');
       setLocation('');
       setNiche('');
+      setCompetitorsText('');
+
+      await refreshProjects();
+      handleSelectProject(projectId);
+      setShowModal(false);
+    } catch (err) {
+      console.error('Error creating project:', err);
+    } finally {
+      setIsSubmitting(false);
     }
-    setShowModal(false);
-    window.location.reload();
   };
 
-  const saveManual = () => {
-    if (!domain.trim()) return;
-    const site: SiteSelection = {
-      domain: domain.trim(),
-      location: location.trim() || '-',
-      niche: niche.trim() || '-',
-    };
-    selectSite(site);
+  const handleDeleteProject = async (projectId: string, name: string) => {
+    if (confirm(`Are you sure you want to delete the project "${name}"? Owned uploads will be disassociated.`)) {
+      await deleteProject(projectId);
+      await refreshProjects();
+      if (selectedId === projectId) {
+        handleSelectProject(null);
+      }
+    }
   };
 
-  const clear = () => {
-    setSelectedSite(null);
-    setSelected(null);
-    setDomain('');
-    setLocation('');
-    setNiche('');
-    setShowModal(false);
-    window.location.reload();
-  };
-
-  const selectedLabel = selected
-    ? `${selected.domain} / ${selected.location} / ${selected.niche}`
-    : 'All Projects';
+  const selectedProject = projects.find((p) => p.id === selectedId);
 
   return (
     <div style={{ padding: '0.75rem 1.25rem', borderBottom: '1px solid var(--card-border)', fontSize: '0.75rem' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
         <span style={{ color: 'var(--muted)', fontWeight: 600 }}>PROJECT / SITE</span>
-        {selected && (
-          <button onClick={clear} style={{ fontSize: '0.65rem', color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}>
+        {selectedId && (
+          <button
+            onClick={() => handleSelectProject(null)}
+            style={{ fontSize: '0.65rem', color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}
+          >
             Clear
           </button>
         )}
       </div>
 
-      {/* Compact dropdown selector only */}
       <select
-        value={selected ? `${selected.domain}|${selected.location}|${selected.niche}` : ''}
+        value={selectedId || ''}
         onChange={(e) => {
-          if (!e.target.value) {
-            selectSite(null);
-          } else {
-            const opt = options.find((o) => o.key === e.target.value);
-            if (opt) selectSite(opt.site);
-          }
+          const val = e.target.value;
+          handleSelectProject(val || null);
         }}
         style={{
           width: '100%',
@@ -170,27 +129,25 @@ export default function ProjectSiteSelector() {
         }}
       >
         <option value="">All Projects</option>
-        {options.map((opt) => (
-          <option key={opt.key} value={opt.key}>
-            {opt.label}
+        {projects.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name} ({p.domain})
           </option>
         ))}
       </select>
 
-      {selected && (
+      {selectedProject && (
         <div style={{ marginTop: '0.25rem', fontSize: '0.65rem', color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          Selected: {selectedLabel}
+          Selected: {selectedProject.name} ({selectedProject.domain})
+          {(selectedProject.location || selectedProject.niche) && (
+            <span> • {selectedProject.location || '-'} / {selectedProject.niche || '-'}</span>
+          )}
         </div>
       )}
 
-      {/* Small Manage/Advanced button - opens modal */}
-      <div style={{ marginTop: '0.35rem' }}>
+      <div style={{ marginTop: '0.35rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <button
-          onClick={() => {
-            const isManual = selected ? !knownDomains.includes(selected.domain) : false;
-            setIsManualOverride(isManual);
-            setShowModal(true);
-          }}
+          onClick={() => setShowModal(true)}
           style={{
             fontSize: '0.6rem',
             color: 'var(--accent)',
@@ -201,17 +158,28 @@ export default function ProjectSiteSelector() {
             textDecoration: 'underline',
           }}
         >
-          Manage / Advanced
+          Manage Projects
         </button>
       </div>
 
-      {!selected && options.length > 0 && (
-        <div style={{ fontSize: '0.55rem', color: 'var(--muted)', marginTop: '0.2rem' }}>
-          Auto from uploads • {options.length} projects
+      {!selectedId && projects.length === 0 && (
+        <div
+          style={{
+            marginTop: '0.5rem',
+            fontSize: '0.65rem',
+            color: 'var(--accent)',
+            background: 'rgba(235, 94, 40, 0.05)',
+            padding: '0.4rem 0.5rem',
+            borderRadius: '4px',
+            border: '1px dashed var(--accent)',
+            lineHeight: '1.2'
+          }}
+        >
+          No projects configured yet. Click "Manage Projects" to get started!
         </div>
       )}
 
-      {/* Modal for manual/advanced entry */}
+      {/* Modal for managing and adding projects */}
       {showModal && (
         <div
           style={{
@@ -222,6 +190,7 @@ export default function ProjectSiteSelector() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
+            padding: '1rem',
           }}
           onClick={() => setShowModal(false)}
         >
@@ -231,195 +200,204 @@ export default function ProjectSiteSelector() {
               background: 'var(--card)',
               border: '1px solid var(--card-border)',
               borderRadius: '10px',
-              padding: '1.25rem',
-              width: 'min(420px, 92vw)',
+              padding: '1.5rem',
+              width: 'min(500px, 95vw)',
+              maxHeight: '90vh',
+              overflowY: 'auto',
               boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
             }}
           >
-            <div style={{ fontWeight: 600, marginBottom: '0.75rem', fontSize: '0.95rem' }}>Advanced Project / Site Filter</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <div style={{ fontWeight: 600, fontSize: '1rem' }}>Manage Projects</div>
+              <button
+                onClick={() => setShowModal(false)}
+                style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: 'var(--muted)' }}
+              >
+                &times;
+              </button>
+            </div>
 
-            {!isManualOverride ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                  <label style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--muted)' }}>Domain</label>
-                  <select
-                    value={knownDomains.includes(domain) ? domain : ''}
-                    onChange={(e) => handleDomainSelect(e.target.value)}
+            {/* List of current projects */}
+            <div style={{ marginBottom: '1.5rem' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--muted)', marginBottom: '0.5rem' }}>
+                EXISTING PROJECTS ({projects.length})
+              </div>
+              {projects.length === 0 ? (
+                <div style={{ fontSize: '0.7rem', color: 'var(--muted)', fontStyle: 'italic', padding: '0.5rem 0', borderBottom: '1px dashed var(--card-border)' }}>
+                  No projects created yet.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', maxHeight: '150px', overflowY: 'auto', border: '1px solid var(--card-border)', borderRadius: '6px', padding: '0.4rem' }}>
+                  {projects.map((p) => (
+                    <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.72rem', padding: '0.25rem 0.4rem', borderRadius: '4px', background: 'var(--background)' }}>
+                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: '0.5rem' }}>
+                        <strong>{p.name}</strong> <span style={{ color: 'var(--muted)' }}>({p.domain})</span>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteProject(p.id, p.name)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#ff4d4d',
+                          cursor: 'pointer',
+                          fontSize: '0.65rem',
+                          padding: '0.1rem 0.3rem',
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Add new project form */}
+            <form onSubmit={handleCreateProject} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--muted)', borderBottom: '1px solid var(--card-border)', paddingBottom: '0.25rem' }}>
+                CREATE NEW PROJECT
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <label style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--muted)' }}>
+                  Project Name <span style={{ color: 'var(--accent)' }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Acme Corp Web"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  style={{
+                    fontSize: '0.75rem',
+                    padding: '0.45rem 0.6rem',
+                    border: '1px solid var(--card-border)',
+                    borderRadius: '6px',
+                    background: 'var(--background)',
+                    color: 'var(--foreground)',
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <label style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--muted)' }}>
+                  Owned Domain <span style={{ color: 'var(--accent)' }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. acme.com"
+                  required
+                  value={domain}
+                  onChange={(e) => setDomain(e.target.value)}
+                  style={{
+                    fontSize: '0.75rem',
+                    padding: '0.45rem 0.6rem',
+                    border: '1px solid var(--card-border)',
+                    borderRadius: '6px',
+                    background: 'var(--background)',
+                    color: 'var(--foreground)',
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <label style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--muted)' }}>Location (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. US"
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
                     style={{
-                      fontSize: '0.8rem',
+                      fontSize: '0.75rem',
                       padding: '0.45rem 0.6rem',
                       border: '1px solid var(--card-border)',
                       borderRadius: '6px',
                       background: 'var(--background)',
                       color: 'var(--foreground)',
-                      cursor: 'pointer',
-                      width: '100%',
                     }}
-                  >
-                    <option value="" disabled>Select domain</option>
-                    {knownDomains.map((d) => (
-                      <option key={d} value={d}>
-                        {d}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
 
-                {domain && knownDomains.includes(domain) ? (
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                      <label style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--muted)' }}>Location / Country</label>
-                      <select
-                        value={location}
-                        onChange={(e) => setLocation(e.target.value)}
-                        style={{
-                          fontSize: '0.8rem',
-                          padding: '0.45rem 0.6rem',
-                          border: '1px solid var(--card-border)',
-                          borderRadius: '6px',
-                          background: 'var(--background)',
-                          color: 'var(--foreground)',
-                          cursor: 'pointer',
-                          width: '100%',
-                        }}
-                      >
-                        <option value="-">Any location</option>
-                        {Array.from(
-                          new Set(
-                            options
-                              .filter((opt) => opt.site?.domain === domain)
-                              .map((opt) => opt.site?.location)
-                              .filter((l): l is string => !!l && l !== '-')
-                          )
-                        ).sort((a, b) => a.localeCompare(b)).map((loc) => (
-                          <option key={loc} value={loc}>
-                            {loc}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                      <label style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--muted)' }}>Niche</label>
-                      <select
-                        value={niche}
-                        onChange={(e) => setNiche(e.target.value)}
-                        style={{
-                          fontSize: '0.8rem',
-                          padding: '0.45rem 0.6rem',
-                          border: '1px solid var(--card-border)',
-                          borderRadius: '6px',
-                          background: 'var(--background)',
-                          color: 'var(--foreground)',
-                          cursor: 'pointer',
-                          width: '100%',
-                        }}
-                      >
-                        <option value="-">Any niche</option>
-                        {Array.from(
-                          new Set(
-                            options
-                              .filter((opt) => opt.site?.domain === domain)
-                              .map((opt) => opt.site?.niche)
-                              .filter((n): n is string => !!n && n !== '-')
-                          )
-                        ).sort((a, b) => a.localeCompare(b)).map((nich) => (
-                          <option key={nich} value={nich}>
-                            {nich}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ fontSize: '0.7rem', color: 'var(--muted)', fontStyle: 'italic', marginTop: '0.25rem' }}>
-                    Please select a domain to configure location and niche filters.
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                <div style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--accent)', marginBottom: '0.25rem' }}>
-                  Manual Override Mode
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <label style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--muted)' }}>Niche (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. SaaS"
+                    value={niche}
+                    onChange={(e) => setNiche(e.target.value)}
+                    style={{
+                      fontSize: '0.75rem',
+                      padding: '0.45rem 0.6rem',
+                      border: '1px solid var(--card-border)',
+                      borderRadius: '6px',
+                      background: 'var(--background)',
+                      color: 'var(--foreground)',
+                    }}
+                  />
                 </div>
-                <input
-                  type="text"
-                  placeholder="Domain (e.g. example.com)"
-                  value={domain === '-' ? '' : domain}
-                  onChange={(e) => setDomain(e.target.value)}
-                  style={{ fontSize: '0.8rem', padding: '0.45rem 0.6rem', border: '1px solid var(--card-border)', borderRadius: '6px', background: 'var(--background)', color: 'var(--foreground)' }}
-                />
-                <input
-                  type="text"
-                  placeholder="Location / Country"
-                  value={location === '-' ? '' : location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  style={{ fontSize: '0.8rem', padding: '0.45rem 0.6rem', border: '1px solid var(--card-border)', borderRadius: '6px', background: 'var(--background)', color: 'var(--foreground)' }}
-                />
-                <input
-                  type="text"
-                  placeholder="Niche"
-                  value={niche === '-' ? '' : niche}
-                  onChange={(e) => setNiche(e.target.value)}
-                  style={{ fontSize: '0.8rem', padding: '0.45rem 0.6rem', border: '1px solid var(--card-border)', borderRadius: '6px', background: 'var(--background)', color: 'var(--foreground)' }}
-                />
               </div>
-            )}
 
-            <div style={{ marginTop: '1rem', paddingTop: '0.75rem', borderTop: '1px dashed var(--card-border)' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.7rem', color: 'var(--muted)', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={isManualOverride}
-                  onChange={(e) => {
-                    setIsManualOverride(e.target.checked);
-                    if (!e.target.checked) {
-                      if (selected && knownDomains.includes(selected.domain)) {
-                        setDomain(selected.domain);
-                        setLocation(selected.location);
-                        setNiche(selected.niche);
-                      } else {
-                        setDomain('');
-                        setLocation('');
-                        setNiche('');
-                      }
-                    }
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <label style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--muted)' }}>
+                  Competitor Domains (Optional)
+                </label>
+                <textarea
+                  placeholder="Enter domains, one per line or separated by commas (e.g. competitor1.com, competitor2.com)"
+                  value={competitorsText}
+                  onChange={(e) => setCompetitorsText(e.target.value)}
+                  style={{
+                    fontSize: '0.75rem',
+                    padding: '0.45rem 0.6rem',
+                    border: '1px solid var(--card-border)',
+                    borderRadius: '6px',
+                    background: 'var(--background)',
+                    color: 'var(--foreground)',
+                    minHeight: '60px',
+                    resize: 'vertical',
+                    fontFamily: 'inherit',
                   }}
-                  style={{ cursor: 'pointer' }}
                 />
-                Enable manual override (for custom/unlisted domains)
-              </label>
-            </div>
+                <div style={{ fontSize: '0.62rem', color: 'var(--muted)', background: 'rgba(255,255,255,0.03)', padding: '0.4rem', borderRadius: '4px', border: '1px solid var(--card-border)', marginTop: '0.2rem', lineHeight: '1.3' }}>
+                  <strong>Important:</strong> Competitors are tracked separately. They will not appear in the selectable projects list and do not affect the project domain filters.
+                </div>
+              </div>
 
-            <div style={{ display: 'flex', gap: '0.6rem', marginTop: '1rem' }}>
-              <button
-                disabled={isSaveDisabled}
-                onClick={saveManual}
-                style={{
-                  flex: 1,
-                  fontSize: '0.8rem',
-                  padding: '0.5rem',
-                  background: isSaveDisabled ? 'var(--card-border)' : 'var(--accent)',
-                  color: isSaveDisabled ? 'var(--muted)' : '#fff',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: isSaveDisabled ? 'not-allowed' : 'pointer',
-                  fontWeight: 500
-                }}
-              >
-                Save & Filter
-              </button>
-              <button
-                onClick={() => setShowModal(false)}
-                style={{ fontSize: '0.8rem', padding: '0.5rem', background: 'transparent', border: '1px solid var(--card-border)', color: 'var(--foreground)', borderRadius: '6px', cursor: 'pointer' }}
-              >
-                Cancel
-              </button>
-            </div>
-
-            <div style={{ marginTop: '0.75rem', fontSize: '0.65rem', color: 'var(--muted)', lineHeight: 1.4 }}>
-              Values are matched against uploaded CSV fields (domain, location/country, niche). Use “All Projects” in the sidebar dropdown for no filter.
-            </div>
+              <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.75rem' }}>
+                <button
+                  type="submit"
+                  disabled={isSubmitting || !name.trim() || !domain.trim()}
+                  style={{
+                    flex: 1,
+                    fontSize: '0.8rem',
+                    padding: '0.5rem',
+                    background: isSubmitting ? 'var(--card-border)' : 'var(--accent)',
+                    color: isSubmitting ? 'var(--muted)' : '#fff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                    fontWeight: 500,
+                  }}
+                >
+                  {isSubmitting ? 'Creating...' : 'Create & Select Project'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  style={{
+                    fontSize: '0.8rem',
+                    padding: '0.5rem',
+                    background: 'transparent',
+                    border: '1px solid var(--card-border)',
+                    color: 'var(--foreground)',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

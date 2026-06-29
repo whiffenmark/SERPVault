@@ -1,4 +1,4 @@
-import type { AppStore } from './types';
+import type { AppStore, ProjectRecord } from './types';
 
 const STORAGE_KEY = 'serpvault_data';
 
@@ -11,6 +11,8 @@ const defaultStore: AppStore = {
   referringDomains: [],
   anchorTexts: [],
   dedupeReports: [],
+  projects: [],
+  competitors: [],
 };
 
 export function getStore(): AppStore {
@@ -60,8 +62,7 @@ export function removeUpload(uploadId: string): void {
   }));
 }
 
-// --- Project/Site Selector (localStorage only, PR #8) ---
-const SITE_KEY = 'serpvault_selected_site';
+// --- Project/Site Selector ---
 
 export type SiteSelection = {
   domain: string;
@@ -69,7 +70,7 @@ export type SiteSelection = {
   niche: string;
 } | null;
 
-type SiteScopedRow = {
+export type SiteScopedRow = {
   country?: string;
   database?: string;
   domain?: string;
@@ -81,24 +82,65 @@ type SiteScopedRow = {
   targetDomain?: string;
   yourDomain?: string;
   raw?: Record<string, string>;
+  uploadId?: string;
 };
+
+export function getSelectedProjectId(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem('serpvault_selected_project_id') || null;
+}
+
+export function setSelectedProjectId(id: string | null): void {
+  if (typeof window === 'undefined') return;
+  if (id) {
+    localStorage.setItem('serpvault_selected_project_id', id);
+  } else {
+    localStorage.removeItem('serpvault_selected_project_id');
+  }
+}
+
+export function getSelectedProject(): ProjectRecord | null {
+  const id = getSelectedProjectId();
+  if (!id) return null;
+  return getStore().projects.find((p) => p.id === id) || null;
+}
 
 export function getSelectedSite(): SiteSelection {
   if (typeof window === 'undefined') return null;
-  try {
-    const raw = localStorage.getItem(SITE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
+  const projectId = getSelectedProjectId();
+  if (!projectId) return null;
+  const store = getStore();
+  const project = (store.projects || []).find((p) => p.id === projectId);
+  if (!project) return null;
+  return {
+    domain: project.domain,
+    location: project.location || '',
+    niche: project.niche || '',
+  };
 }
 
 export function setSelectedSite(site: SiteSelection): void {
   if (typeof window === 'undefined') return;
-  if (site) {
-    localStorage.setItem(SITE_KEY, JSON.stringify(site));
+  if (!site) {
+    setSelectedProjectId(null);
+    return;
+  }
+  const store = getStore();
+  const project = (store.projects || []).find(
+    (p) =>
+      p.domain === site.domain &&
+      (p.location || '') === (site.location || '') &&
+      (p.niche || '') === (site.niche || '')
+  );
+  if (project) {
+    setSelectedProjectId(project.id);
   } else {
-    localStorage.removeItem(SITE_KEY);
+    const projectByDomain = (store.projects || []).find((p) => p.domain === site.domain);
+    if (projectByDomain) {
+      setSelectedProjectId(projectByDomain.id);
+    } else {
+      setSelectedProjectId(null);
+    }
   }
 }
 
@@ -229,11 +271,32 @@ export function rowMatchesSiteSelection(row: SiteScopedRow, site: SiteSelection)
 }
 
 export function filterRowsBySite<T extends SiteScopedRow>(rows: T[], site: SiteSelection): T[] {
-  return site ? rows.filter((row) => rowMatchesSiteSelection(row, site)) : rows;
+  if (!site) return rows;
+  const store = getStore();
+  const selectedProjectId = getSelectedProjectId();
+  return rows.filter((row) => {
+    if (row.uploadId) {
+      const upload = store.uploads.find((u) => u.id === row.uploadId);
+      if (upload && upload.projectId) {
+        return upload.projectId === selectedProjectId;
+      }
+    }
+    // Legacy fallback
+    return rowMatchesSiteSelection(row, site);
+  });
 }
 
 export function siteSelectionLabel(site: SiteSelection): string {
-  return site ? `${site.domain} / ${site.location} / ${site.niche}` : 'All Projects';
+  if (!site) return 'All Projects';
+  const store = getStore();
+  const project = (store.projects || []).find(
+    (p) =>
+      p.domain === site.domain &&
+      (p.location || '') === (site.location || '') &&
+      (p.niche || '') === (site.niche || '')
+  );
+  if (project) return project.name;
+  return `${site.domain} / ${site.location} / ${site.niche}`;
 }
 
 export function siteSelectionSlug(site: SiteSelection): string {

@@ -21,6 +21,8 @@ import type {
   AnchorTextRecord,
   DedupeReport,
   Tag,
+  ProjectRecord,
+  CompetitorRecord,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -55,6 +57,8 @@ function toUploadRow(u: UploadRecord) {
     row_count: u.rowCount,
     cleaned_row_count: u.cleanedRowCount,
     dedupe_report_id: u.dedupeReportId,
+    project_id: u.projectId ?? null,
+    source_tool: u.sourceTool ?? null,
   };
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -67,6 +71,8 @@ function fromUploadRow(r: any): UploadRecord {
     rowCount: r.row_count,
     cleanedRowCount: r.cleaned_row_count,
     dedupeReportId: r.dedupe_report_id,
+    projectId: r.project_id ?? undefined,
+    sourceTool: r.source_tool ?? undefined,
   };
 }
 
@@ -236,6 +242,50 @@ function fromDrRow(r: any): DedupeReport {
   };
 }
 
+function toProjectRow(p: ProjectRecord) {
+  return {
+    id: p.id,
+    name: p.name,
+    domain: p.domain,
+    location: p.location ?? null,
+    niche: p.niche ?? null,
+    created_at: p.createdAt,
+    updated_at: p.updatedAt ?? null,
+  };
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function fromProjectRow(r: any): ProjectRecord {
+  return {
+    id: r.id,
+    name: r.name,
+    domain: r.domain,
+    location: r.location ?? undefined,
+    niche: r.niche ?? undefined,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at ?? undefined,
+  };
+}
+
+function toCompetitorRow(c: CompetitorRecord) {
+  return {
+    id: c.id,
+    project_id: c.projectId,
+    domain: c.domain,
+    label: c.label ?? null,
+    created_at: c.createdAt ?? null,
+  };
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function fromCompetitorRow(r: any): CompetitorRecord {
+  return {
+    id: r.id,
+    projectId: r.project_id,
+    domain: r.domain,
+    label: r.label ?? undefined,
+    createdAt: r.created_at ?? undefined,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Writes
 // ---------------------------------------------------------------------------
@@ -280,16 +330,107 @@ export async function saveAnchorTexts(rows: AnchorTextRecord[]): Promise<void> {
   await sbInsert('anchor_texts', rows.map(toAtRow));
 }
 
+export async function saveProject(p: ProjectRecord, competitorDomains?: string[]): Promise<void> {
+  const newCompetitors: CompetitorRecord[] = (competitorDomains || []).map((domain, index) => ({
+    id: `${p.id}-comp-${index}-${Date.now()}`,
+    projectId: p.id,
+    domain: domain.trim(),
+    createdAt: new Date().toISOString(),
+  }));
+
+  updateStore(s => ({
+    ...s,
+    projects: [...(s.projects || []), p],
+    competitors: [...(s.competitors || []), ...newCompetitors],
+  }));
+
+  const sb = getSupabase();
+  if (sb) {
+    try {
+      await sbInsert('projects', [toProjectRow(p)]);
+      if (newCompetitors.length > 0) {
+        await sbInsert('competitors', newCompetitors.map(toCompetitorRow));
+      }
+    } catch (err) {
+      console.error('[db] saveProject Supabase error:', err);
+    }
+  }
+}
+
+export async function deleteProject(projectId: string): Promise<void> {
+  updateStore(s => ({
+    ...s,
+    projects: (s.projects || []).filter(p => p.id !== projectId),
+    competitors: (s.competitors || []).filter(c => c.projectId !== projectId),
+    uploads: (s.uploads || []).map(u => u.projectId === projectId ? { ...u, projectId: undefined } : u),
+  }));
+
+  const sb = getSupabase();
+  if (sb) {
+    try {
+      await sb.from('uploads').update({ project_id: null }).eq('project_id', projectId);
+      await sb.from('competitors').delete().eq('project_id', projectId);
+      await sb.from('projects').delete().eq('id', projectId);
+    } catch (err) {
+      console.error('[db] deleteProject Supabase error:', err);
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Reads  (Supabase → localStorage fallback)
 // ---------------------------------------------------------------------------
 
+export async function getProjects(): Promise<ProjectRecord[]> {
+  const sb = getSupabase();
+  if (sb) {
+    try {
+      const { data, error } = await sb.from('projects').select('*').order('created_at', { ascending: false });
+      if (data && !error) {
+        const projects = data.map(fromProjectRow);
+        updateStore(s => ({ ...s, projects }));
+        return projects;
+      }
+      console.error('[db] getProjects:', error?.message);
+    } catch (e) {
+      console.error('[db] getProjects exception:', e);
+    }
+  }
+  return getStore().projects || [];
+}
+
+export async function getCompetitors(): Promise<CompetitorRecord[]> {
+  const sb = getSupabase();
+  if (sb) {
+    try {
+      const { data, error } = await sb.from('competitors').select('*').order('created_at', { ascending: false });
+      if (data && !error) {
+        const competitors = data.map(fromCompetitorRow);
+        updateStore(s => ({ ...s, competitors }));
+        return competitors;
+      }
+      console.error('[db] getCompetitors:', error?.message);
+    } catch (e) {
+      console.error('[db] getCompetitors exception:', e);
+    }
+  }
+  return getStore().competitors || [];
+}
+
 export async function getUploads(): Promise<UploadRecord[]> {
   const sb = getSupabase();
   if (sb) {
-    const { data, error } = await sb.from('uploads').select('*').order('uploaded_at', { ascending: false });
-    if (data && !error) return data.map(fromUploadRow);
-    console.error('[db] getUploads:', error?.message);
+    try {
+      const { data, error } = await sb.from('uploads').select('*').order('uploaded_at', { ascending: false });
+      if (data && !error) {
+        const uploads = data.map(fromUploadRow);
+        updateStore(s => ({ ...s, uploads }));
+        return uploads;
+      }
+      console.error('[db] getUploads:', error?.message);
+    } catch (e) {
+      console.error('[db] getUploads exception:', e);
+    }
   }
   return getStore().uploads;
 }
@@ -419,6 +560,8 @@ export async function migrateLocalToSupabase(): Promise<{ tables: string[]; rows
     totalRows += rows.length;
   };
 
+  await run('projects', (store.projects || []).map(toProjectRow));
+  await run('competitors', (store.competitors || []).map(toCompetitorRow));
   await run('uploads', store.uploads.map(toUploadRow));
   await run('dedupe_reports', store.dedupeReports.map(toDrRow));
   await run('keywords', store.keywords.map(toKwRow));

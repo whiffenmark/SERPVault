@@ -1,6 +1,24 @@
 -- SERPVault Supabase Schema
 -- Run this in your Supabase SQL Editor to create tables
 
+create table if not exists projects (
+  id text primary key,
+  name text not null,
+  domain text not null,
+  location text,
+  niche text,
+  created_at timestamptz default now(),
+  updated_at timestamptz
+);
+
+create table if not exists competitors (
+  id text primary key,
+  project_id text references projects(id) on delete cascade,
+  domain text not null,
+  label text,
+  created_at timestamptz default now()
+);
+
 create table if not exists uploads (
   id text primary key,
   filename text not null,
@@ -8,8 +26,14 @@ create table if not exists uploads (
   uploaded_at timestamptz default now(),
   row_count integer default 0,
   cleaned_row_count integer default 0,
-  dedupe_report_id text
+  dedupe_report_id text,
+  project_id text references projects(id),
+  source_tool text
 );
+
+alter table uploads add column if not exists project_id text references projects(id);
+alter table uploads add column if not exists source_tool text;
+
 
 create table if not exists keywords (
   id text primary key,
@@ -116,6 +140,8 @@ create table if not exists dedupe_reports (
 -- This allows the publishable key to read/write all tables freely.
 -- If you add Supabase Auth later, re-enable RLS and add user-scoped policies.
 -- ---------------------------------------------------------------------------
+alter table projects disable row level security;
+alter table competitors disable row level security;
 alter table uploads disable row level security;
 alter table keywords disable row level security;
 alter table keyword_gaps disable row level security;
