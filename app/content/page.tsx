@@ -106,7 +106,7 @@ export default function ContentPage() {
 
   const columns: Column<ContentRow>[] = [
     { key: 'keyword', label: 'Keyword', sortKey: (r) => r.keyword },
-    { key: 'volume', label: 'Volume', sortKey: (r) => r.volume ?? 0, render: (r) => r.volume?.toLocaleString() ?? '-' },
+    { key: 'volume', label: 'Monthly Volume', sortKey: (r) => r.volume ?? 0, render: (r) => r.volume?.toLocaleString() ?? '-' },
     { key: 'difficulty', label: 'KD', sortKey: (r) => r.difficulty ?? 0, render: (r) => r.difficulty ?? '-' },
     { key: 'intent', label: 'Intent', render: (r) => r.intent ?? '-' },
     {

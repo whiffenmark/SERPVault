@@ -80,7 +80,7 @@ export default function ExportPage() {
     {
       title: 'All Keywords CSV',
       icon: '◈',
-      description: 'Every keyword with volume, KD, CPC, intent, tag, and opportunity score.',
+      description: 'Every keyword with monthly volume, KD, CPC, intent, tag, and opportunity score.',
       count: counts.keywords,
       action: () => run('kw', async () => exportKeywordsCSV(await scopedKeywords(), scopeSlug)),
     },

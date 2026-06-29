@@ -34,7 +34,7 @@ function scopedFilename(base: string, extension: string, scopeSlug?: string): st
 export function exportKeywordsCSV(rows: KeywordRecord[], scopeSlug?: string): void {
   const data = rows.map((r) => ({
     Keyword: r.keyword,
-    Volume: r.volume ?? '',
+    'Monthly Volume': r.volume ?? '',
     Difficulty: r.difficulty ?? '',
     CPC: r.cpc ?? '',
     Intent: r.intent ?? '',
@@ -62,7 +62,7 @@ export function exportContentPlanCSV(rows: KeywordRecord[], scopeSlug?: string):
   const data = tagged.map((r) => ({
     Keyword: r.keyword,
     'Content Type': r.tag ?? '',
-    Volume: r.volume ?? '',
+    'Monthly Volume': r.volume ?? '',
     Difficulty: r.difficulty ?? '',
     Intent: r.intent ?? '',
     'Opportunity Score': r.opportunityScore ?? '',
@@ -108,7 +108,7 @@ export function exportActionPlanMD(
     '',
     '## Top Keyword Opportunities',
     '',
-    '| Keyword | Volume | Difficulty | Intent | Tag | Score |',
+    '| Keyword | Monthly Volume | Difficulty | Intent | Tag | Score |',
     '|---------|--------|------------|--------|-----|-------|',
     ...topKw.map(
       (r) =>

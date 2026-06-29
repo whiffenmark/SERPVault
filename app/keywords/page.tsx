@@ -125,7 +125,7 @@ export default function KeywordsPage() {
 
   const columns: Column<KeywordRecord>[] = [
     { key: 'keyword', label: 'Keyword', sortKey: (r) => r.keyword },
-    { key: 'volume', label: 'Volume', sortKey: (r) => r.volume ?? 0, render: (r) => r.volume?.toLocaleString() ?? '-' },
+    { key: 'volume', label: 'Monthly Volume', sortKey: (r) => r.volume ?? 0, render: (r) => r.volume?.toLocaleString() ?? '-' },
     { key: 'difficulty', label: 'KD', sortKey: (r) => r.difficulty ?? 0, render: (r) => r.difficulty ?? '-' },
     { key: 'cpc', label: 'CPC', sortKey: (r) => r.cpc ?? 0, render: (r) => (r.cpc != null ? `$${r.cpc.toFixed(2)}` : '-') },
     { key: 'intent', label: 'Intent', render: (r) => r.intent ?? '-' },
@@ -155,7 +155,7 @@ export default function KeywordsPage() {
 
       <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
         <Card title="Total Keywords" value={keywords.length} />
-        <Card title="Total Search Volume" value={totalVol.toLocaleString()} />
+        <Card title="Total Monthly Search Volume" value={totalVol.toLocaleString()} />
         <Card title="Avg KD" value={avgDiff} />
         <Card title="Tagged" value={keywords.filter((k) => k.tag).length} accent />
       </div>
