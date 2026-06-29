@@ -241,7 +241,12 @@ export function exportHermesContentPlanMD(rows: KeywordRecord[], scopeLabel = 'A
 }
 
 export function exportWorkflowActionPlanCSV(
-  items: (OpportunityQueueItem & { status: OpportunityWorkflowStatus })[],
+  items: (OpportunityQueueItem & {
+    status: OpportunityWorkflowStatus;
+    owner?: string;
+    dueDate?: string;
+    notes?: string;
+  })[],
   scopeSlug?: string
 ): void {
   const data = items.map((r) => ({
@@ -253,6 +258,9 @@ export function exportWorkflowActionPlanCSV(
     'Recommended Action': r.recommendedAction,
     Score: r.score,
     Impact: r.impact,
+    Owner: r.owner ?? '',
+    'Due Date': r.dueDate ?? '',
+    Notes: r.notes ?? '',
     href: r.href ?? '',
   }));
   download(toCSV(data), scopedFilename('serpvault-workflow-action-plan', 'csv', scopeSlug));
@@ -266,7 +274,12 @@ function cleanMDCell(val: unknown): string {
 }
 
 export function exportWorkflowActionPlanMD(
-  items: (OpportunityQueueItem & { status: OpportunityWorkflowStatus })[],
+  items: (OpportunityQueueItem & {
+    status: OpportunityWorkflowStatus;
+    owner?: string;
+    dueDate?: string;
+    notes?: string;
+  })[],
   scopeLabel = 'All Projects',
   scopeSlug?: string
 ): void {
@@ -276,11 +289,11 @@ export function exportWorkflowActionPlanMD(
     '',
     `**Export Scope:** ${scopeLabel}`,
     '',
-    '| Status | Type | Title | Detail | Source | Recommended Action | Score | Impact | Link |',
-    '|--------|------|-------|--------|--------|--------------------|-------|--------|------|',
+    '| Status | Type | Title | Detail | Source | Recommended Action | Score | Impact | Owner | Due Date | Notes | Link |',
+    '|--------|------|-------|--------|--------|--------------------|-------|--------|-------|----------|-------|------|',
     ...items.map(
       (r) =>
-        `| ${cleanMDCell(r.status)} | ${cleanMDCell(r.type)} | ${cleanMDCell(r.title)} | ${cleanMDCell(r.detail)} | ${cleanMDCell(r.sourceLabel)} | ${cleanMDCell(r.recommendedAction)} | ${cleanMDCell(r.score)} | ${cleanMDCell(r.impact)} | ${r.href ? `[View](${r.href})` : '-'} |`
+        `| ${cleanMDCell(r.status)} | ${cleanMDCell(r.type)} | ${cleanMDCell(r.title)} | ${cleanMDCell(r.detail)} | ${cleanMDCell(r.sourceLabel)} | ${cleanMDCell(r.recommendedAction)} | ${cleanMDCell(r.score)} | ${cleanMDCell(r.impact)} | ${cleanMDCell(r.owner)} | ${cleanMDCell(r.dueDate)} | ${cleanMDCell(r.notes)} | ${r.href ? `[View](${r.href})` : '-'} |`
     ),
   ];
 

@@ -27,6 +27,11 @@ import {
   type OpportunityWorkflowStatus
 } from '@/lib/opportunity-workflow';
 import { exportWorkflowActionPlanCSV, exportWorkflowActionPlanMD } from '@/lib/export';
+import {
+  getActionPlanMetadataMap,
+  saveActionPlanMetadataMap,
+  type ActionPlanItemMetadata
+} from '@/lib/action-plan-metadata';
 
 export default function ActionPlanPage() {
   const [keywords, setKeywords] = useState<KeywordRecord[]>([]);
@@ -37,14 +42,19 @@ export default function ActionPlanPage() {
   const [loading, setLoading] = useState(true);
 
   const [workflowMap, setWorkflowMap] = useState<Record<string, OpportunityWorkflowStatus>>({});
+  const [metadataMap, setMetadataMap] = useState<Record<string, ActionPlanItemMetadata>>({});
   const [statusFilter, setStatusFilter] = useState<'All' | 'Planned' | 'In Progress' | 'Done'>('All');
   const [typeFilter, setTypeFilter] = useState<'all' | 'content' | 'gap' | 'backlink' | 'competitor'>('all');
+  const [dueFilter, setDueFilter] = useState<'All' | 'Overdue' | 'This Week' | 'No Due Date'>('All');
 
   useEffect(() => {
     setSelectedSiteState(getSelectedSite());
 
     const map = getOpportunityWorkflowMap();
     setWorkflowMap(map);
+
+    const meta = getActionPlanMetadataMap();
+    setMetadataMap(meta);
 
     Promise.all([
       db.getKeywords(),
@@ -65,6 +75,21 @@ export default function ActionPlanPage() {
     saveOpportunityWorkflowMap(updated);
   };
 
+  const handleMetadataChange = (id: string, patch: Partial<ActionPlanItemMetadata>) => {
+    setMetadataMap((prev) => {
+      const updated = {
+        ...prev,
+        [id]: {
+          ...(prev[id] || {}),
+          ...patch,
+          updatedAt: new Date().toISOString(),
+        },
+      };
+      saveActionPlanMetadataMap(updated);
+      return updated;
+    });
+  };
+
   const scopedKeywords = filterRowsBySite(keywords, selectedSite);
   const scopedBacklinks = filterRowsBySite(backlinks, selectedSite);
   const scopedGaps = filterRowsBySite(gaps, selectedSite);
@@ -76,11 +101,18 @@ export default function ActionPlanPage() {
   }, [scopedKeywords, scopedGaps, scopedBacklinks, scopedCompetitors]);
 
   const enrichedQueue = useMemo(() => {
-    return queue.map((item) => ({
-      ...item,
-      status: workflowMap[item.id] || 'New',
-    }));
-  }, [queue, workflowMap]);
+    return queue.map((item) => {
+      const meta = metadataMap[item.id] || {};
+      return {
+        ...item,
+        status: workflowMap[item.id] || 'New',
+        owner: meta.owner,
+        dueDate: meta.dueDate,
+        notes: meta.notes,
+        updatedAt: meta.updatedAt,
+      };
+    });
+  }, [queue, workflowMap, metadataMap]);
 
   // Keep only planned, in progress, or completed items
   const actionPlanQueue = useMemo(() => {
@@ -88,6 +120,25 @@ export default function ActionPlanPage() {
       (item) => item.status === 'Planned' || item.status === 'In Progress' || item.status === 'Done'
     );
   }, [enrichedQueue]);
+
+  // Due date calculation helpers
+  const { todayStr, next7Str } = useMemo(() => {
+    const today = new Date();
+    const next7 = new Date();
+    next7.setDate(today.getDate() + 7);
+    return {
+      todayStr: `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`,
+      next7Str: `${next7.getFullYear()}-${String(next7.getMonth() + 1).padStart(2, '0')}-${String(next7.getDate()).padStart(2, '0')}`,
+    };
+  }, []);
+
+  const isOverdue = (dueDate?: string, status?: string) => {
+    return !!(dueDate && dueDate < todayStr && status !== 'Done');
+  };
+
+  const isThisWeek = (dueDate?: string) => {
+    return !!(dueDate && dueDate >= todayStr && dueDate <= next7Str);
+  };
 
   // Apply filters
   const filteredPlan = useMemo(() => {
@@ -98,23 +149,41 @@ export default function ActionPlanPage() {
       if (statusFilter !== 'All' && item.status !== statusFilter) {
         return false;
       }
+      if (dueFilter === 'Overdue') {
+        if (!isOverdue(item.dueDate, item.status)) return false;
+      } else if (dueFilter === 'This Week') {
+        if (!isThisWeek(item.dueDate)) return false;
+      } else if (dueFilter === 'No Due Date') {
+        if (item.dueDate) return false;
+      }
       return true;
     });
-  }, [actionPlanQueue, typeFilter, statusFilter]);
+  }, [actionPlanQueue, typeFilter, statusFilter, dueFilter, todayStr, next7Str]);
 
   const counts = useMemo(() => {
     const planned = actionPlanQueue.filter((item) => item.status === 'Planned').length;
     const inProgress = actionPlanQueue.filter((item) => item.status === 'In Progress').length;
     const done = actionPlanQueue.filter((item) => item.status === 'Done').length;
     const totalImpact = actionPlanQueue.reduce((sum, item) => sum + (item.impact || 0), 0);
+
+    // New stats
+    const assigned = actionPlanQueue.filter((item) => item.owner && item.owner.trim() !== '').length;
+    const dueThisWeek = actionPlanQueue.filter((item) => item.dueDate && item.dueDate >= todayStr && item.dueDate <= next7Str).length;
+    const overdue = actionPlanQueue.filter((item) => item.dueDate && item.dueDate < todayStr && item.status !== 'Done').length;
+    const withNotes = actionPlanQueue.filter((item) => item.notes && item.notes.trim() !== '').length;
+
     return {
       total: actionPlanQueue.length,
       planned,
       inProgress,
       done,
       totalImpact,
+      assigned,
+      dueThisWeek,
+      overdue,
+      withNotes,
     };
-  }, [actionPlanQueue]);
+  }, [actionPlanQueue, todayStr, next7Str]);
 
   const handleExportCSV = () => {
     const slug = siteSelectionSlug(selectedSite);
@@ -252,7 +321,7 @@ export default function ActionPlanPage() {
       </div>
 
       {/* Summary Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
         <Card title="Plan Items" value={counts.total} sub="total saved in plan" />
         <Card title="Planned" value={counts.planned} sub="to be deployed" />
         <Card title="In Progress" value={counts.inProgress} sub="currently active" accent />
@@ -260,37 +329,153 @@ export default function ActionPlanPage() {
         <Card title="Total Impact" value={counts.totalImpact} sub="cumulative search value" />
       </div>
 
+      {/* Secondary Stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '8px', padding: '0.8rem 1rem' }}>
+          <div style={{ fontSize: '0.7rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.2rem' }}>Assigned Items</div>
+          <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--foreground)' }}>{counts.assigned}</div>
+        </div>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '8px', padding: '0.8rem 1rem' }}>
+          <div style={{ fontSize: '0.7rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.2rem' }}>Due This Week</div>
+          <div style={{ fontSize: '1.25rem', fontWeight: 700, color: counts.dueThisWeek > 0 ? 'var(--warning)' : 'var(--foreground)' }}>{counts.dueThisWeek}</div>
+        </div>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '8px', padding: '0.8rem 1rem' }}>
+          <div style={{ fontSize: '0.7rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.2rem' }}>Overdue</div>
+          <div style={{ fontSize: '1.25rem', fontWeight: 700, color: counts.overdue > 0 ? 'var(--danger)' : 'var(--foreground)' }}>{counts.overdue}</div>
+        </div>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '8px', padding: '0.8rem 1rem' }}>
+          <div style={{ fontSize: '0.7rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.2rem' }}>Items with Notes</div>
+          <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--foreground)' }}>{counts.withNotes}</div>
+        </div>
+      </div>
+
       {/* Main Workspace Workspace */}
       <div style={{ background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '1.5rem', marginBottom: '2rem' }}>
         {/* Compact Controls */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
-          {/* Status Tabs */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--card-border)', paddingBottom: '1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+            {/* Status Tabs */}
+            <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--muted)', marginRight: '0.35rem', fontWeight: 500 }}>Status:</span>
+              {(
+                [
+                  { id: 'All', label: 'All Statuses' },
+                  { id: 'Planned', label: 'Planned' },
+                  { id: 'In Progress', label: 'In Progress' },
+                  { id: 'Done', label: 'Done' },
+                ] as const
+              ).map((statusOption) => {
+                const active = statusFilter === statusOption.id;
+                let activeBorder = 'var(--accent)';
+                let activeBg = 'var(--accent)';
+                let activeColor = '#fff';
+
+                if (active) {
+                  if (statusOption.id === 'Planned') { activeBg = 'rgba(56, 189, 248, 0.12)'; activeColor = '#38bdf8'; activeBorder = '#38bdf8'; }
+                  else if (statusOption.id === 'In Progress') { activeBg = 'rgba(245, 158, 11, 0.12)'; activeColor = 'var(--warning)'; activeBorder = 'var(--warning)'; }
+                  else if (statusOption.id === 'Done') { activeBg = 'rgba(16, 185, 129, 0.12)'; activeColor = 'var(--success)'; activeBorder = 'var(--success)'; }
+                  else { activeBg = 'rgba(99, 102, 241, 0.12)'; activeColor = 'var(--accent)'; activeBorder = 'var(--accent)'; }
+                }
+
+                return (
+                  <button
+                    key={statusOption.id}
+                    onClick={() => setStatusFilter(statusOption.id)}
+                    style={{
+                      padding: '0.3rem 0.7rem',
+                      borderRadius: '15px',
+                      border: '1px solid',
+                      borderColor: active ? activeBorder : 'var(--card-border)',
+                      background: active ? activeBg : 'transparent',
+                      color: active ? activeColor : 'var(--muted)',
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      outline: 'none',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!active) e.currentTarget.style.borderColor = 'var(--accent)';
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!active) e.currentTarget.style.borderColor = 'var(--card-border)';
+                    }}
+                  >
+                    {statusOption.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Type Chips */}
+            <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', alignItems: 'center' }}>
+              {(
+                [
+                  { id: 'all', label: 'All Types' },
+                  { id: 'content', label: 'Content' },
+                  { id: 'gap', label: 'Keyword Gaps' },
+                  { id: 'backlink', label: 'Backlinks' },
+                  { id: 'competitor', label: 'Competitors' },
+                ] as const
+              ).map((tab) => {
+                const active = typeFilter === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setTypeFilter(tab.id)}
+                    style={{
+                      padding: '0.3rem 0.7rem',
+                      borderRadius: '20px',
+                      border: '1px solid',
+                      borderColor: active ? 'var(--accent)' : 'var(--card-border)',
+                      background: active ? 'var(--accent)' : 'rgba(255,255,255,0.02)',
+                      color: active ? '#fff' : 'var(--muted)',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      outline: 'none',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!active) e.currentTarget.style.borderColor = 'var(--accent)';
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!active) e.currentTarget.style.borderColor = 'var(--card-border)';
+                    }}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.75rem', color: 'var(--muted)', marginRight: '0.35rem', fontWeight: 500 }}>Status:</span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--muted)', marginRight: '0.35rem', fontWeight: 500 }}>Due Date:</span>
             {(
               [
-                { id: 'All', label: 'All Statuses' },
-                { id: 'Planned', label: 'Planned' },
-                { id: 'In Progress', label: 'In Progress' },
-                { id: 'Done', label: 'Done' },
+                { id: 'All', label: 'All Due' },
+                { id: 'Overdue', label: 'Overdue' },
+                { id: 'This Week', label: 'This Week' },
+                { id: 'No Due Date', label: 'No Due Date' },
               ] as const
-            ).map((statusOption) => {
-              const active = statusFilter === statusOption.id;
+            ).map((dueOption) => {
+              const active = dueFilter === dueOption.id;
               let activeBorder = 'var(--accent)';
               let activeBg = 'var(--accent)';
               let activeColor = '#fff';
 
               if (active) {
-                if (statusOption.id === 'Planned') { activeBg = 'rgba(56, 189, 248, 0.12)'; activeColor = '#38bdf8'; activeBorder = '#38bdf8'; }
-                else if (statusOption.id === 'In Progress') { activeBg = 'rgba(245, 158, 11, 0.12)'; activeColor = 'var(--warning)'; activeBorder = 'var(--warning)'; }
-                else if (statusOption.id === 'Done') { activeBg = 'rgba(16, 185, 129, 0.12)'; activeColor = 'var(--success)'; activeBorder = 'var(--success)'; }
-                else { activeBg = 'rgba(99, 102, 241, 0.12)'; activeColor = 'var(--accent)'; activeBorder = 'var(--accent)'; }
+                if (dueOption.id === 'Overdue') { activeBg = 'rgba(239, 68, 68, 0.12)'; activeColor = 'var(--danger)'; activeBorder = 'var(--danger)'; }
+                else if (dueOption.id === 'This Week') { activeBg = 'rgba(99, 102, 241, 0.12)'; activeColor = 'var(--accent)'; activeBorder = 'var(--accent)'; }
+                else if (dueOption.id === 'No Due Date') { activeBg = 'rgba(100, 116, 139, 0.12)'; activeColor = 'var(--muted)'; activeBorder = 'var(--muted)'; }
+                else { activeBg = 'rgba(255,255,255,0.08)'; activeColor = 'var(--foreground)'; activeBorder = 'var(--card-border)'; }
               }
 
               return (
                 <button
-                  key={statusOption.id}
-                  onClick={() => setStatusFilter(statusOption.id)}
+                  key={dueOption.id}
+                  onClick={() => setDueFilter(dueOption.id)}
                   style={{
                     padding: '0.3rem 0.7rem',
                     borderRadius: '15px',
@@ -311,49 +496,7 @@ export default function ActionPlanPage() {
                     if (!active) e.currentTarget.style.borderColor = 'var(--card-border)';
                   }}
                 >
-                  {statusOption.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Type Chips */}
-          <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', alignItems: 'center' }}>
-            {(
-              [
-                { id: 'all', label: 'All Types' },
-                { id: 'content', label: 'Content' },
-                { id: 'gap', label: 'Keyword Gaps' },
-                { id: 'backlink', label: 'Backlinks' },
-                { id: 'competitor', label: 'Competitors' },
-              ] as const
-            ).map((tab) => {
-              const active = typeFilter === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setTypeFilter(tab.id)}
-                  style={{
-                    padding: '0.3rem 0.7rem',
-                    borderRadius: '20px',
-                    border: '1px solid',
-                    borderColor: active ? 'var(--accent)' : 'var(--card-border)',
-                    background: active ? 'var(--accent)' : 'rgba(255,255,255,0.02)',
-                    color: active ? '#fff' : 'var(--muted)',
-                    fontSize: '0.75rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                    outline: 'none',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!active) e.currentTarget.style.borderColor = 'var(--accent)';
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!active) e.currentTarget.style.borderColor = 'var(--card-border)';
-                  }}
-                >
-                  {tab.label}
+                  {dueOption.label}
                 </button>
               );
             })}
@@ -377,13 +520,14 @@ export default function ActionPlanPage() {
               <Search size={24} />
             </div>
             <h4 style={{ fontWeight: 600, fontSize: '0.95rem', marginBottom: '0.25rem' }}>No matching opportunities</h4>
-            <p style={{ color: 'var(--muted)', fontSize: '0.82rem', marginBottom: '1.25rem', maxWidth: '400px', margin: '0.25rem auto 1.25rem' }}>
-              Your current filters (Type: <strong>{typeFilter}</strong>, Status: <strong>{statusFilter}</strong>) did not match any plan items.
+            <p style={{ color: 'var(--muted)', fontSize: '0.82rem', marginBottom: '1.25rem', maxWidth: '450px', margin: '0.25rem auto 1.25rem' }}>
+              Your current filters (Type: <strong>{typeFilter}</strong>, Status: <strong>{statusFilter}</strong>, Due: <strong>{dueFilter}</strong>) did not match any plan items.
             </p>
             <button
               onClick={() => {
                 setTypeFilter('all');
                 setStatusFilter('All');
+                setDueFilter('All');
               }}
               style={{
                 display: 'inline-block',
@@ -402,16 +546,19 @@ export default function ActionPlanPage() {
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', textAlign: 'left', minWidth: '900px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', textAlign: 'left', minWidth: '1100px' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--card-border)', color: 'var(--muted)', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  <th style={{ padding: '0.6rem 0.5rem', width: '120px' }}>Priority</th>
-                  <th style={{ padding: '0.6rem 0.5rem', width: '110px' }}>Type</th>
-                  <th style={{ padding: '0.6rem 0.5rem', width: '230px' }}>Opportunity</th>
-                  <th style={{ padding: '0.6rem 0.5rem', width: '110px' }}>Impact</th>
-                  <th style={{ padding: '0.6rem 0.5rem', width: '130px' }}>Source</th>
-                  <th style={{ padding: '0.6rem 0.5rem' }}>Recommended Action</th>
-                  <th style={{ padding: '0.6rem 0.5rem', width: '140px' }}>Status</th>
+                  <th style={{ padding: '0.6rem 0.5rem', width: '100px' }}>Priority</th>
+                  <th style={{ padding: '0.6rem 0.5rem', width: '90px' }}>Type</th>
+                  <th style={{ padding: '0.6rem 0.5rem', width: '180px' }}>Opportunity</th>
+                  <th style={{ padding: '0.6rem 0.5rem', width: '90px' }}>Impact</th>
+                  <th style={{ padding: '0.6rem 0.5rem', width: '100px' }}>Source</th>
+                  <th style={{ padding: '0.6rem 0.5rem', minWidth: '150px' }}>Recommended Action</th>
+                  <th style={{ padding: '0.6rem 0.5rem', width: '110px' }}>Owner</th>
+                  <th style={{ padding: '0.6rem 0.5rem', width: '130px' }}>Due Date</th>
+                  <th style={{ padding: '0.6rem 0.5rem', width: '150px' }}>Notes</th>
+                  <th style={{ padding: '0.6rem 0.5rem', width: '120px' }}>Status</th>
                   <th style={{ padding: '0.6rem 0.5rem', textAlign: 'right', width: '80px' }}>Action</th>
                 </tr>
               </thead>
@@ -482,7 +629,7 @@ export default function ActionPlanPage() {
                           {item.type}
                         </span>
                       </td>
-                      <td style={{ padding: '0.65rem 0.5rem', maxWidth: '230px' }}>
+                      <td style={{ padding: '0.65rem 0.5rem', maxWidth: '180px' }}>
                         <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.title}>
                           {item.title}
                         </div>
@@ -502,7 +649,7 @@ export default function ActionPlanPage() {
                           borderRadius: '4px',
                           padding: '0.1rem 0.35rem',
                           background: 'rgba(255,255,255,0.01)',
-                          maxWidth: '120px',
+                          maxWidth: '100px',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
                           whiteSpace: 'nowrap'
@@ -513,6 +660,97 @@ export default function ActionPlanPage() {
                       <td style={{ padding: '0.65rem 0.5rem', color: 'var(--foreground)', opacity: 0.9 }}>
                         {item.recommendedAction}
                       </td>
+
+                      {/* Owner Column */}
+                      <td style={{ padding: '0.65rem 0.5rem' }}>
+                        <input
+                          type="text"
+                          placeholder="Owner..."
+                          value={item.owner || ''}
+                          onChange={(e) => handleMetadataChange(item.id, { owner: e.target.value })}
+                          style={{
+                            width: '100%',
+                            padding: '0.25rem 0.4rem',
+                            borderRadius: '4px',
+                            border: '1px solid var(--card-border)',
+                            background: 'rgba(255, 255, 255, 0.02)',
+                            color: 'var(--foreground)',
+                            fontSize: '0.75rem',
+                            outline: 'none',
+                            colorScheme: 'inherit',
+                          }}
+                          onFocus={(e) => {
+                            e.currentTarget.style.borderColor = 'var(--accent)';
+                            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)';
+                          }}
+                          onBlur={(e) => {
+                            e.currentTarget.style.borderColor = 'var(--card-border)';
+                            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.02)';
+                          }}
+                        />
+                      </td>
+
+                      {/* Due Date Column */}
+                      <td style={{ padding: '0.65rem 0.5rem' }}>
+                        <input
+                          type="date"
+                          value={item.dueDate || ''}
+                          onChange={(e) => handleMetadataChange(item.id, { dueDate: e.target.value })}
+                          style={{
+                            width: '100%',
+                            padding: '0.25rem 0.4rem',
+                            borderRadius: '4px',
+                            border: '1px solid var(--card-border)',
+                            background: 'rgba(255, 255, 255, 0.02)',
+                            color: 'var(--foreground)',
+                            fontSize: '0.75rem',
+                            outline: 'none',
+                            cursor: 'pointer',
+                            colorScheme: 'inherit',
+                          }}
+                          onFocus={(e) => {
+                            e.currentTarget.style.borderColor = 'var(--accent)';
+                            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)';
+                          }}
+                          onBlur={(e) => {
+                            e.currentTarget.style.borderColor = 'var(--card-border)';
+                            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.02)';
+                          }}
+                        />
+                      </td>
+
+                      {/* Notes Column */}
+                      <td style={{ padding: '0.65rem 0.5rem' }}>
+                        <textarea
+                          rows={1}
+                          placeholder="Add notes..."
+                          value={item.notes || ''}
+                          onChange={(e) => handleMetadataChange(item.id, { notes: e.target.value })}
+                          style={{
+                            width: '100%',
+                            padding: '0.25rem 0.4rem',
+                            borderRadius: '4px',
+                            border: '1px solid var(--card-border)',
+                            background: 'rgba(255, 255, 255, 0.02)',
+                            color: 'var(--foreground)',
+                            fontSize: '0.75rem',
+                            outline: 'none',
+                            resize: 'vertical',
+                            minHeight: '26px',
+                            lineHeight: '1.2',
+                            colorScheme: 'inherit',
+                          }}
+                          onFocus={(e) => {
+                            e.currentTarget.style.borderColor = 'var(--accent)';
+                            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)';
+                          }}
+                          onBlur={(e) => {
+                            e.currentTarget.style.borderColor = 'var(--card-border)';
+                            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.02)';
+                          }}
+                        />
+                      </td>
+
                       <td style={{ padding: '0.65rem 0.5rem' }}>
                         <select
                           value={item.status}
