@@ -377,6 +377,30 @@ export async function deleteProject(projectId: string): Promise<void> {
   }
 }
 
+export async function updateUploadProject(uploadIds: string[], projectId: string | undefined): Promise<void> {
+  updateStore(s => ({
+    ...s,
+    uploads: (s.uploads || []).map(u =>
+      uploadIds.includes(u.id) ? { ...u, projectId } : u
+    )
+  }));
+
+  const sb = getSupabase();
+  if (sb && uploadIds.length > 0) {
+    try {
+      const { error } = await sb
+        .from('uploads')
+        .update({ project_id: projectId ?? null })
+        .in('id', uploadIds);
+      if (error) {
+        console.error(`[db] updateUploadProject Supabase error:`, error.message);
+      }
+    } catch (err) {
+      console.error('[db] updateUploadProject Supabase error:', err);
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Reads  (Supabase → localStorage fallback)
 // ---------------------------------------------------------------------------

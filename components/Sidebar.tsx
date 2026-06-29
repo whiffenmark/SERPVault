@@ -9,6 +9,7 @@ import ProjectSiteSelector from './ProjectSiteSelector';
 const nav = [
   { href: '/', label: 'Dashboard', icon: '⌂' },
   { href: '/upload', label: 'Upload CSVs', icon: '↑' },
+  { href: '/uploads', label: 'Upload Library', icon: '▤' },
   { href: '/keywords', label: 'Keyword Database', icon: '◈' },
   { href: '/competitor-pages', label: 'Competitor Pages', icon: '◉' },
   { href: '/backlinks', label: 'Backlink Opportunities', icon: '⛓' },
