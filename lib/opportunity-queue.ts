@@ -2,7 +2,7 @@ import type { KeywordRecord, KeywordGapRecord, BacklinkRecord, CompetitorPageRec
 
 export interface OpportunityQueueItem {
   id: string;
-  type: 'content' | 'gap' | 'backlink' | 'competitor';
+  type: 'content' | 'gap' | 'backlink' | 'competitor' | 'health';
   title: string;
   detail: string;
   sourceLabel: string;
@@ -42,6 +42,26 @@ function normalizeIdParts(parts: (string | undefined | null)[]): string {
     .filter(Boolean)
     .join(':');
 }
+
+export function getCompetitorPageOpportunityId(cp: CompetitorPageRecord): string {
+  return normalizeIdParts([
+    'competitor',
+    cp.domain,
+    cp.url,
+    cp.uploadId
+  ]);
+}
+
+export function getKeywordGapOpportunityId(gap: KeywordGapRecord): string {
+  return normalizeIdParts([
+    'gap',
+    gap.keyword,
+    gap.competitorDomain || '',
+    gap.yourDomain || '',
+    gap.uploadId
+  ]);
+}
+
 
 export function buildOpportunityQueue(
   keywords: KeywordRecord[],
@@ -119,13 +139,7 @@ export function buildOpportunityQueue(
       ? `Bridge content gap against ${gap.competitorDomain}`
       : 'Optimize content to capture search engine gap';
 
-    const opportunityId = normalizeIdParts([
-      'gap',
-      gap.keyword,
-      gap.competitorDomain || '',
-      gap.yourDomain || '',
-      gap.uploadId
-    ]);
+    const opportunityId = getKeywordGapOpportunityId(gap);
 
     items.push({
       id: opportunityId,
@@ -189,12 +203,7 @@ export function buildOpportunityQueue(
       const detail = `Title: "${cp.title || 'N/A'}" | Domain: ${cp.domain} | URL: ${cp.url}`;
       const recommendedAction = `Create competing content for keyword targets (${cp.keywords ?? 0} keywords)`;
 
-      const opportunityId = normalizeIdParts([
-        'competitor',
-        cp.domain,
-        cp.url,
-        cp.uploadId
-      ]);
+      const opportunityId = getCompetitorPageOpportunityId(cp);
 
       items.push({
         id: opportunityId,

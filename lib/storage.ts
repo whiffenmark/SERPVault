@@ -85,18 +85,51 @@ export type SiteScopedRow = {
   uploadId?: string;
 };
 
+export const SELECTED_PROJECT_STORAGE_KEY = 'serpvault_selected_project_id';
+export const PROJECT_SCOPE_CHANGED_EVENT = 'serpvault:project-scope-changed';
+
 export function getSelectedProjectId(): string | null {
   if (typeof window === 'undefined') return null;
-  return localStorage.getItem('serpvault_selected_project_id') || null;
+  return localStorage.getItem(SELECTED_PROJECT_STORAGE_KEY) || null;
 }
 
 export function setSelectedProjectId(id: string | null): void {
   if (typeof window === 'undefined') return;
   if (id) {
-    localStorage.setItem('serpvault_selected_project_id', id);
+    localStorage.setItem(SELECTED_PROJECT_STORAGE_KEY, id);
   } else {
-    localStorage.removeItem('serpvault_selected_project_id');
+    localStorage.removeItem(SELECTED_PROJECT_STORAGE_KEY);
   }
+  // Dispatch custom event
+  const event = new CustomEvent(PROJECT_SCOPE_CHANGED_EVENT, {
+    detail: { projectId: id },
+  });
+  window.dispatchEvent(event);
+}
+
+export function subscribeProjectScopeChange(callback: (projectId: string | null) => void): () => void {
+  if (typeof window === 'undefined') {
+    return () => {};
+  }
+
+  const handleCustom = (e: Event) => {
+    const customEvent = e as CustomEvent<{ projectId: string | null }>;
+    callback(customEvent.detail?.projectId ?? null);
+  };
+
+  const handleStorage = (e: StorageEvent) => {
+    if (e.key === SELECTED_PROJECT_STORAGE_KEY) {
+      callback(e.newValue || null);
+    }
+  };
+
+  window.addEventListener(PROJECT_SCOPE_CHANGED_EVENT, handleCustom);
+  window.addEventListener('storage', handleStorage);
+
+  return () => {
+    window.removeEventListener(PROJECT_SCOPE_CHANGED_EVENT, handleCustom);
+    window.removeEventListener('storage', handleStorage);
+  };
 }
 
 export function getSelectedProject(): ProjectRecord | null {

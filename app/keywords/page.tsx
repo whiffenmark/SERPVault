@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { updateStore, getSelectedSite, filterRowsBySite } from '@/lib/storage';
+import { updateStore, getSelectedSite, filterRowsBySite, subscribeProjectScopeChange, type SiteSelection } from '@/lib/storage';
 import * as db from '@/lib/db';
 import type { KeywordRecord, Tag } from '@/lib/types';
 import DataTable from '@/components/DataTable';
@@ -11,6 +11,7 @@ import type { Column } from '@/components/DataTable';
 
 export default function KeywordsPage() {
   const [keywords, setKeywords] = useState<KeywordRecord[]>([]);
+  const [selectedSite, setSelectedSite] = useState<SiteSelection>(null);
   const [loading, setLoading] = useState(true);
   const [keywordSearch, setKeywordSearch] = useState('');
   const [filters, setFilters] = useState<Record<string, string>>({
@@ -19,7 +20,13 @@ export default function KeywordsPage() {
   const [plannerExpanded, setPlannerExpanded] = useState(false);
 
   useEffect(() => {
+    setSelectedSite(getSelectedSite());
     db.getKeywords().then(setKeywords).finally(() => setLoading(false));
+
+    const unsubscribe = subscribeProjectScopeChange(() => {
+      setSelectedSite(getSelectedSite());
+    });
+    return () => unsubscribe();
   }, []);
 
   const handleTagChange = useCallback(async (id: string, tag: Tag | undefined) => {
@@ -98,7 +105,7 @@ export default function KeywordsPage() {
   };
 
   const filteredKeywords = useMemo(() => {
-    let result = filterRowsBySite(keywords, getSelectedSite());
+    let result = filterRowsBySite(keywords, selectedSite);
     if (keywordSearch) {
       const q = keywordSearch.toLowerCase();
       result = result.filter((k) => k.keyword.toLowerCase().includes(q));
@@ -109,7 +116,7 @@ export default function KeywordsPage() {
       }
     });
     return result;
-  }, [keywords, keywordSearch, filters]);
+  }, [keywords, keywordSearch, filters, selectedSite]);
 
   // Build unique options for each filter (from current keywords)
   const filterOptions = useMemo(() => {

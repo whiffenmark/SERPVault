@@ -1,12 +1,15 @@
 'use client';
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { updateStore, getSelectedSite, filterRowsBySite, siteSelectionLabel, getSelectedProjectId, type SiteSelection } from '@/lib/storage';
+import { useRouter } from 'next/navigation';
+import { updateStore, getSelectedSite, filterRowsBySite, siteSelectionLabel, getSelectedProjectId, type SiteSelection, subscribeProjectScopeChange } from '@/lib/storage';
 import * as db from '@/lib/db';
 import type { CompetitorPageRecord, KeywordGapRecord, BacklinkRecord, ReferringDomainRecord, CompetitorRecord, Tag } from '@/lib/types';
 import { getCompetitorDomainSummaries, getDomainFromUrl } from '@/lib/competitive-intelligence';
 import ScoreBadge from '@/components/ScoreBadge';
 import Card from '@/components/Card';
+import { getCompetitorPageOpportunityId, getKeywordGapOpportunityId } from '@/lib/opportunity-queue';
+import { getOpportunityWorkflowMap, saveOpportunityWorkflowMap, STATUS_COLORS, type OpportunityWorkflowStatus } from '@/lib/opportunity-workflow';
 import {
   Globe,
   ExternalLink,
@@ -30,9 +33,11 @@ const TAG_COLORS: Record<Tag, string> = {
 };
 
 export default function CompetitiveIntelligencePage() {
+  const router = useRouter();
   const [selectedSite, setSelectedSite] = useState<SiteSelection>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [workflowMap, setWorkflowMap] = useState<Record<string, OpportunityWorkflowStatus>>({});
 
   // Raw database tables state
   const [competitorPages, setCompetitorPages] = useState<CompetitorPageRecord[]>([]);
@@ -60,6 +65,7 @@ export default function CompetitiveIntelligencePage() {
   useEffect(() => {
     setSelectedSite(getSelectedSite());
     setSelectedProjectId(getSelectedProjectId());
+    setWorkflowMap(getOpportunityWorkflowMap());
 
     Promise.all([
       db.getCompetitorPages(),
@@ -76,6 +82,12 @@ export default function CompetitiveIntelligencePage() {
         setProjectCompetitors(comps);
       })
       .finally(() => setLoading(false));
+
+    const unsubscribe = subscribeProjectScopeChange((projectId) => {
+      setSelectedSite(getSelectedSite());
+      setSelectedProjectId(projectId);
+    });
+    return () => unsubscribe();
   }, []);
 
   // Tag editing handler for competitor pages
@@ -83,6 +95,25 @@ export default function CompetitiveIntelligencePage() {
     setCompetitorPages((prev) => prev.map((p) => (p.id === id ? { ...p, tag } : p)));
     updateStore((s) => ({ ...s, competitorPages: s.competitorPages.map((p) => (p.id === id ? { ...p, tag } : p)) }));
     await db.updateTag('competitor_pages', id, tag);
+  }, []);
+
+  const toggleWorkflowStatus = useCallback((opportunityId: string) => {
+    setWorkflowMap((prev) => {
+      const current = prev[opportunityId];
+      let next: OpportunityWorkflowStatus;
+
+      if (!current || current === 'New' || current === 'Ignored') {
+        next = 'Planned';
+      } else if (current === 'Planned') {
+        next = 'New';
+      } else {
+        return prev;
+      }
+
+      const newMap = { ...prev, [opportunityId]: next };
+      saveOpportunityWorkflowMap(newMap);
+      return newMap;
+    });
   }, []);
 
   // Filter raw datasets by active Project / Site scope
@@ -225,7 +256,7 @@ export default function CompetitiveIntelligencePage() {
         title: 'Missing Competitor Data',
         description: 'You have not uploaded any competitor URLs, domain lists, or referring domains yet.',
         actionText: 'Go to Uploads',
-        action: () => { window.location.href = '/upload'; }
+        action: () => { router.push('/upload'); }
       });
     }
 
@@ -286,13 +317,13 @@ export default function CompetitiveIntelligencePage() {
         description: 'Establish explicit competitor domains in your project settings to enable cross-referenced insights.',
         actionText: 'Review Upload Library',
         action: () => {
-          window.location.href = '/uploads';
+          router.push('/uploads');
         }
       });
     }
 
     return list.slice(0, 3);
-  }, [competitors, displayedPages, loading]);
+  }, [competitors, displayedPages, loading, router]);
 
   const getRecommendationStyle = (type: 'content' | 'link' | 'warning' | 'info') => {
     switch (type) {
@@ -406,6 +437,7 @@ export default function CompetitiveIntelligencePage() {
                   </div>
                 </div>
                 <button
+                  type="button"
                   onClick={rec.action}
                   style={{
                     alignSelf: 'flex-start',
@@ -443,6 +475,7 @@ export default function CompetitiveIntelligencePage() {
           }}
         >
           <button
+            type="button"
             onClick={() => setActiveTab('summary')}
             style={{
               padding: '0.6rem 1.2rem',
@@ -460,6 +493,7 @@ export default function CompetitiveIntelligencePage() {
             Competitor Domains ({filteredCompetitors.length})
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab('pages')}
             style={{
               padding: '0.6rem 1.2rem',
@@ -477,6 +511,7 @@ export default function CompetitiveIntelligencePage() {
             Competitor Top Pages ({filteredPages.length})
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab('gaps')}
             style={{
               padding: '0.6rem 1.2rem',
@@ -515,6 +550,7 @@ export default function CompetitiveIntelligencePage() {
               Showing details filtered by competitor domain: <strong style={{ color: 'var(--accent)' }}>{selectedDomain}</strong>
             </div>
             <button
+              type="button"
               onClick={() => setSelectedDomain(null)}
               style={{
                 background: 'none',
@@ -570,6 +606,7 @@ export default function CompetitiveIntelligencePage() {
                       const active = summaryChip === chip;
                       return (
                         <button
+                          type="button"
                           key={chip}
                           onClick={() => setSummaryChip(chip)}
                           style={{
@@ -622,6 +659,9 @@ export default function CompetitiveIntelligencePage() {
                         </th>
                         <th style={{ padding: '0.65rem 0.875rem', textAlign: 'center', color: 'var(--muted)', fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em', width: '90px' }}>
                           Intel Score
+                        </th>
+                        <th style={{ padding: '0.65rem 0.875rem', textAlign: 'center', color: 'var(--muted)', fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em', width: '130px' }}>
+                          Action Plan
                         </th>
                       </tr>
                     </thead>
@@ -703,12 +743,118 @@ export default function CompetitiveIntelligencePage() {
                             <td style={{ padding: '0.65rem 0.875rem', textAlign: 'center' }}>
                               <ScoreBadge score={comp.opportunityScore} />
                             </td>
+                            <td style={{ padding: '0.65rem 0.875rem', textAlign: 'center' }}>
+                              {(() => {
+                                const domainPages = displayedPages.filter(p => getDomainFromUrl(p.domain) === comp.domain || getDomainFromUrl(p.url) === comp.domain);
+                                const eligiblePages = domainPages.filter(p => {
+                                  if (p.tag === 'Ignore') return false;
+                                  const isHighScore = (p.opportunityScore ?? 0) >= 70;
+                                  const isHighTraffic = (p.traffic ?? 0) >= 500;
+                                  return isHighScore || isHighTraffic;
+                                });
+                                const bestPage = [...eligiblePages].sort((a, b) => (b.opportunityScore ?? 0) - (a.opportunityScore ?? 0))[0];
+
+                                let bestOpp: { id: string; label: string; title: string } | null = null;
+                                if (bestPage) {
+                                  bestOpp = {
+                                    id: getCompetitorPageOpportunityId(bestPage),
+                                    label: 'Page',
+                                    title: bestPage.title || bestPage.url
+                                  };
+                                } else {
+                                  const domainGaps = displayedGaps.filter(g => getDomainFromUrl(g.competitorDomain) === comp.domain);
+                                  const eligibleGaps = domainGaps.filter(g => g.tag !== 'Ignore');
+                                  const bestGap = [...eligibleGaps].sort((a, b) => (b.opportunityScore ?? 0) - (a.opportunityScore ?? 0))[0];
+                                  if (bestGap) {
+                                    bestOpp = {
+                                      id: getKeywordGapOpportunityId(bestGap),
+                                      label: 'Gap',
+                                      title: bestGap.keyword
+                                    };
+                                  }
+                                }
+
+                                if (!bestOpp) {
+                                  return (
+                                    <button
+                                      type="button"
+                                      disabled
+                                      onClick={(e) => e.stopPropagation()}
+                                      style={{
+                                        fontSize: '0.72rem',
+                                        fontWeight: 600,
+                                        padding: '0.2rem 0.5rem',
+                                        borderRadius: '4px',
+                                        border: '1px solid var(--card-border)',
+                                        background: 'var(--panel-subtle)',
+                                        color: 'var(--muted)',
+                                        cursor: 'not-allowed',
+                                        width: '100px',
+                                        textAlign: 'center',
+                                        display: 'inline-block'
+                                      }}
+                                    >
+                                      No Opps
+                                    </button>
+                                  );
+                                }
+
+                                const status = workflowMap[bestOpp.id] || 'New';
+                                if (status === 'In Progress' || status === 'Done') {
+                                  return (
+                                    <span
+                                      style={{
+                                        fontSize: '0.72rem',
+                                        fontWeight: 600,
+                                        color: STATUS_COLORS[status].color,
+                                        background: STATUS_COLORS[status].bg,
+                                        padding: '0.2rem 0.5rem',
+                                        borderRadius: '4px',
+                                        border: `1px solid ${STATUS_COLORS[status].color}30`,
+                                        display: 'inline-block',
+                                        textAlign: 'center',
+                                        width: '100px'
+                                      }}
+                                    >
+                                      {status}
+                                    </span>
+                                  );
+                                }
+
+                                const isPlanned = status === 'Planned';
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      toggleWorkflowStatus(bestOpp!.id);
+                                    }}
+                                    style={{
+                                      fontSize: '0.72rem',
+                                      fontWeight: 600,
+                                      padding: '0.2rem 0.5rem',
+                                      borderRadius: '4px',
+                                      cursor: 'pointer',
+                                      width: '100px',
+                                      textAlign: 'center',
+                                      transition: 'all 0.15s',
+                                      border: isPlanned ? '1px solid #38bdf8' : '1px solid var(--card-border)',
+                                      background: isPlanned ? 'rgba(56, 189, 248, 0.15)' : 'var(--card)',
+                                      color: isPlanned ? '#38bdf8' : 'var(--foreground)'
+                                    }}
+                                    title={isPlanned ? `Remove Planned ${bestOpp.label}: ${bestOpp.title}` : `Plan ${bestOpp.label}: ${bestOpp.title}`}
+                                  >
+                                    {isPlanned ? 'Planned ✓' : bestOpp.label === 'Page' ? 'Plan Page' : 'Plan Gap'}
+                                  </button>
+                                );
+                              })()}
+                            </td>
                           </tr>
                         );
                       })}
                       {filteredCompetitors.length === 0 && (
                         <tr>
-                          <td colSpan={8} style={{ padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>
+                          <td colSpan={9} style={{ padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>
                             No competitor domain summaries found. Try adjusting filters or select another project site.
                           </td>
                         </tr>
@@ -791,6 +937,9 @@ export default function CompetitiveIntelligencePage() {
                         <th style={{ padding: '0.65rem 0.875rem', textAlign: 'left', color: 'var(--muted)', fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em', width: '130px' }}>
                           SERPVault Action
                         </th>
+                        <th style={{ padding: '0.65rem 0.875rem', textAlign: 'center', color: 'var(--muted)', fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em', width: '120px' }}>
+                          Action Plan
+                        </th>
                         <th style={{ padding: '0.65rem 0.875rem', textAlign: 'left', color: 'var(--muted)', fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em', width: '160px' }}>
                           Tag Control
                         </th>
@@ -849,6 +998,54 @@ export default function CompetitiveIntelligencePage() {
                                 {recAction.text}
                               </span>
                             </td>
+                            <td style={{ padding: '0.65rem 0.875rem', textAlign: 'center' }}>
+                              {(() => {
+                                const oppId = getCompetitorPageOpportunityId(page);
+                                const status = workflowMap[oppId] || 'New';
+                                if (status === 'In Progress' || status === 'Done') {
+                                  return (
+                                    <span
+                                      style={{
+                                        fontSize: '0.72rem',
+                                        fontWeight: 600,
+                                        color: STATUS_COLORS[status].color,
+                                        background: STATUS_COLORS[status].bg,
+                                        padding: '0.2rem 0.5rem',
+                                        borderRadius: '4px',
+                                        border: `1px solid ${STATUS_COLORS[status].color}30`,
+                                        display: 'inline-block',
+                                        textAlign: 'center',
+                                        width: '90px'
+                                      }}
+                                    >
+                                      {status}
+                                    </span>
+                                  );
+                                }
+                                const isPlanned = status === 'Planned';
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleWorkflowStatus(oppId)}
+                                    style={{
+                                      fontSize: '0.72rem',
+                                      fontWeight: 600,
+                                      padding: '0.2rem 0.5rem',
+                                      borderRadius: '4px',
+                                      cursor: 'pointer',
+                                      width: '90px',
+                                      textAlign: 'center',
+                                      transition: 'all 0.15s',
+                                      border: isPlanned ? '1px solid #38bdf8' : '1px solid var(--card-border)',
+                                      background: isPlanned ? 'rgba(56, 189, 248, 0.15)' : 'var(--card)',
+                                      color: isPlanned ? '#38bdf8' : 'var(--foreground)'
+                                    }}
+                                  >
+                                    {isPlanned ? 'Planned ✓' : 'Plan'}
+                                  </button>
+                                );
+                              })()}
+                            </td>
                             <td style={{ padding: '0.65rem 0.875rem' }}>
                               <select
                                 value={page.tag ?? ''}
@@ -878,7 +1075,7 @@ export default function CompetitiveIntelligencePage() {
                       })}
                       {filteredPages.length === 0 && (
                         <tr>
-                          <td colSpan={7} style={{ padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>
+                          <td colSpan={8} style={{ padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>
                             No competitor pages found matching current search.
                           </td>
                         </tr>
@@ -949,6 +1146,9 @@ export default function CompetitiveIntelligencePage() {
                         <th style={{ padding: '0.65rem 0.875rem', textAlign: 'left', color: 'var(--muted)', fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em', width: '160px' }}>
                           Suggested Action
                         </th>
+                        <th style={{ padding: '0.65rem 0.875rem', textAlign: 'center', color: 'var(--muted)', fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em', width: '120px' }}>
+                          Action Plan
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -999,12 +1199,60 @@ export default function CompetitiveIntelligencePage() {
                                 {sugAction.text}
                               </span>
                             </td>
+                            <td style={{ padding: '0.65rem 0.875rem', textAlign: 'center' }}>
+                              {(() => {
+                                const oppId = getKeywordGapOpportunityId(gap);
+                                const status = workflowMap[oppId] || 'New';
+                                if (status === 'In Progress' || status === 'Done') {
+                                  return (
+                                    <span
+                                      style={{
+                                        fontSize: '0.72rem',
+                                        fontWeight: 600,
+                                        color: STATUS_COLORS[status].color,
+                                        background: STATUS_COLORS[status].bg,
+                                        padding: '0.2rem 0.5rem',
+                                        borderRadius: '4px',
+                                        border: `1px solid ${STATUS_COLORS[status].color}30`,
+                                        display: 'inline-block',
+                                        textAlign: 'center',
+                                        width: '90px'
+                                      }}
+                                    >
+                                      {status}
+                                    </span>
+                                  );
+                                }
+                                const isPlanned = status === 'Planned';
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleWorkflowStatus(oppId)}
+                                    style={{
+                                      fontSize: '0.72rem',
+                                      fontWeight: 600,
+                                      padding: '0.2rem 0.5rem',
+                                      borderRadius: '4px',
+                                      cursor: 'pointer',
+                                      width: '90px',
+                                      textAlign: 'center',
+                                      transition: 'all 0.15s',
+                                      border: isPlanned ? '1px solid #38bdf8' : '1px solid var(--card-border)',
+                                      background: isPlanned ? 'rgba(56, 189, 248, 0.15)' : 'var(--card)',
+                                      color: isPlanned ? '#38bdf8' : 'var(--foreground)'
+                                    }}
+                                  >
+                                    {isPlanned ? 'Planned ✓' : 'Plan'}
+                                  </button>
+                                );
+                              })()}
+                            </td>
                           </tr>
                         );
                       })}
                       {filteredGaps.length === 0 && (
                         <tr>
-                          <td colSpan={8} style={{ padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>
+                          <td colSpan={9} style={{ padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>
                             No keyword gaps found matching current search.
                           </td>
                         </tr>

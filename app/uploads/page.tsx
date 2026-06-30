@@ -30,6 +30,61 @@ export default function UploadLibraryPage() {
   // Checkbox selection state
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
+  // Status message state
+  const [status, setStatus] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
+  // Confirmation modal state
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    type: 'delete_single' | 'delete_bulk' | 'assign_bulk';
+    title: string;
+    affectedUploads: UploadRecord[];
+    targetProjectId?: string;
+    targetProjectName?: string;
+  }>({
+    isOpen: false,
+    type: 'delete_single',
+    title: '',
+    affectedUploads: [],
+  });
+
+  const showStatus = (text: string, type: 'success' | 'error' = 'success') => {
+    setStatus({ text, type });
+  };
+
+  useEffect(() => {
+    if (status) {
+      const timer = setTimeout(() => {
+        setStatus(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [status]);
+
+  const modalCleanedRows = useMemo(() => {
+    return confirmModal.affectedUploads.reduce((sum, u) => sum + (u.cleanedRowCount || 0), 0);
+  }, [confirmModal.affectedUploads]);
+
+  const renderFileList = (files: string[]) => {
+    if (files.length === 0) return null;
+    const maxToShow = 3;
+    const shown = files.slice(0, maxToShow);
+    const remaining = files.length - maxToShow;
+
+    return (
+      <ul style={{ margin: '0.35rem 0 0.35rem 1.2rem', padding: 0, color: 'var(--foreground)', fontSize: '0.85rem' }}>
+        {shown.map((name, i) => (
+          <li key={i} style={{ wordBreak: 'break-all', marginBottom: '0.2rem' }}>{name}</li>
+        ))}
+        {remaining > 0 && (
+          <li style={{ listStyleType: 'none', color: 'var(--muted)', fontStyle: 'italic', marginLeft: '-1.2rem', marginTop: '0.2rem' }}>
+            and {remaining} more
+          </li>
+        )}
+      </ul>
+    );
+  };
+
   // Load uploads and projects from db
   const refreshData = async () => {
     try {
@@ -105,67 +160,102 @@ export default function UploadLibraryPage() {
     try {
       await db.updateUploadProject([uploadId], projectId);
       await refreshData();
+      const projName = projectId ? (projects.find((p) => p.id === projectId)?.name || 'selected project') : 'Unassigned';
+      showStatus(`Successfully assigned upload to "${projName}".`, 'success');
     } catch (err) {
       console.error('[Upload Library] Error assigning project:', err);
+      showStatus(`Failed to assign project: ${err instanceof Error ? err.message : String(err)}`, 'error');
     } finally {
       setLoading(false);
     }
   };
 
   // Row delete handler
-  const handleDelete = async (u: UploadRecord) => {
-    const message = `Are you sure you want to delete "${u.filename}"?\n\nThis will permanently delete this upload record and all associated keywords, gap details, pages, backlinks, domains, anchor texts, and dedupe reports from the database. This action cannot be undone.`;
-    if (window.confirm(message)) {
-      setLoading(true);
-      try {
-        await db.deleteUpload(u.id);
-        setSelectedIds((prev) => prev.filter((id) => id !== u.id));
-        await refreshData();
-      } catch (err) {
-        console.error('[Upload Library] Error deleting upload:', err);
-      } finally {
-        setLoading(false);
-      }
+  const handleDeleteTrigger = (u: UploadRecord) => {
+    setConfirmModal({
+      isOpen: true,
+      type: 'delete_single',
+      title: 'Delete Upload',
+      affectedUploads: [u],
+    });
+  };
+
+  const executeDeleteSingle = async (u: UploadRecord) => {
+    setLoading(true);
+    try {
+      await db.deleteUpload(u.id);
+      setSelectedIds((prev) => prev.filter((id) => id !== u.id));
+      await refreshData();
+      showStatus(`Successfully deleted upload "${u.filename}".`, 'success');
+    } catch (err) {
+      console.error('[Upload Library] Error deleting upload:', err);
+      showStatus(`Failed to delete upload: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    } finally {
+      setLoading(false);
+      setConfirmModal((prev) => ({ ...prev, isOpen: false }));
     }
   };
 
   // Bulk actions handlers
-  const handleBulkAssign = async (val: string) => {
+  const handleBulkAssignTrigger = (val: string) => {
     if (!val) return;
     const isUnassign = val === 'unassign';
     const targetProjId = isUnassign ? undefined : val;
     const targetProjName = isUnassign ? 'Unassigned' : projects.find((p) => p.id === val)?.name || val;
+    const affected = uploads.filter((u) => selectedIds.includes(u.id));
 
-    const message = `Are you sure you want to assign the ${selectedIds.length} selected uploads to "${targetProjName}"?`;
-    if (window.confirm(message)) {
-      setLoading(true);
-      try {
-        await db.updateUploadProject(selectedIds, targetProjId);
-        setSelectedIds([]);
-        await refreshData();
-      } catch (err) {
-        console.error('[Upload Library] Error bulk assigning project:', err);
-      } finally {
-        setLoading(false);
-      }
+    setConfirmModal({
+      isOpen: true,
+      type: 'assign_bulk',
+      title: 'Bulk Project Assignment',
+      affectedUploads: affected,
+      targetProjectId: targetProjId,
+      targetProjectName: targetProjName,
+    });
+  };
+
+  const executeBulkAssign = async (affected: UploadRecord[], targetProjId: string | undefined, targetProjName: string) => {
+    setLoading(true);
+    try {
+      const ids = affected.map((u) => u.id);
+      await db.updateUploadProject(ids, targetProjId);
+      setSelectedIds([]);
+      await refreshData();
+      showStatus(`Successfully assigned ${affected.length} upload(s) to "${targetProjName}".`, 'success');
+    } catch (err) {
+      console.error('[Upload Library] Error bulk assigning project:', err);
+      showStatus(`Failed to assign uploads: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    } finally {
+      setLoading(false);
+      setConfirmModal((prev) => ({ ...prev, isOpen: false }));
     }
   };
 
-  const handleBulkDelete = async () => {
-    const message = `Are you sure you want to delete the ${selectedIds.length} selected uploads?\n\nThis will permanently delete all selected uploads and all keywords, gap details, pages, backlinks, domains, anchor texts, and dedupe reports imported from them. This cannot be undone.`;
-    if (window.confirm(message)) {
-      setLoading(true);
-      try {
-        for (const id of selectedIds) {
-          await db.deleteUpload(id);
-        }
-        setSelectedIds([]);
-        await refreshData();
-      } catch (err) {
-        console.error('[Upload Library] Error bulk deleting uploads:', err);
-      } finally {
-        setLoading(false);
+  const handleBulkDeleteTrigger = () => {
+    const affected = uploads.filter((u) => selectedIds.includes(u.id));
+    setConfirmModal({
+      isOpen: true,
+      type: 'delete_bulk',
+      title: 'Bulk Delete Uploads',
+      affectedUploads: affected,
+    });
+  };
+
+  const executeDeleteBulk = async (affected: UploadRecord[]) => {
+    setLoading(true);
+    try {
+      for (const u of affected) {
+        await db.deleteUpload(u.id);
       }
+      setSelectedIds([]);
+      await refreshData();
+      showStatus(`Successfully deleted ${affected.length} upload(s).`, 'success');
+    } catch (err) {
+      console.error('[Upload Library] Error bulk deleting uploads:', err);
+      showStatus(`Failed to delete uploads: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    } finally {
+      setLoading(false);
+      setConfirmModal((prev) => ({ ...prev, isOpen: false }));
     }
   };
 
@@ -178,6 +268,41 @@ export default function UploadLibraryPage() {
           Manage your imported CSV data, categorize uploads into projects, or delete redundant import records.
         </p>
       </div>
+
+      {/* Status Message */}
+      {status && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: status.type === 'success' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+          border: `1px solid ${status.type === 'success' ? 'var(--success)' : 'var(--danger)'}`,
+          color: status.type === 'success' ? 'var(--success)' : 'var(--danger)',
+          borderRadius: '8px',
+          padding: '0.75rem 1rem',
+          marginBottom: '1.5rem',
+          fontSize: '0.85rem',
+          fontWeight: 500,
+        }}>
+          <span>{status.text}</span>
+          <button
+            type="button"
+            onClick={() => setStatus(null)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'inherit',
+              cursor: 'pointer',
+              fontSize: '1.1rem',
+              lineHeight: 1,
+              padding: '0 0.25rem',
+              fontWeight: 700,
+            }}
+          >
+            &times;
+          </button>
+        </div>
+      )}
 
       {/* Summary Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
@@ -343,7 +468,7 @@ export default function UploadLibraryPage() {
                 <select
                   value=""
                   onChange={(e) => {
-                    handleBulkAssign(e.target.value);
+                    handleBulkAssignTrigger(e.target.value);
                     e.target.value = ""; // reset
                   }}
                   style={{
@@ -368,7 +493,8 @@ export default function UploadLibraryPage() {
               </div>
 
               <button
-                onClick={handleBulkDelete}
+                type="button"
+                onClick={handleBulkDeleteTrigger}
                 style={{
                   background: 'rgba(239, 68, 68, 0.15)',
                   border: '1px solid var(--danger)',
@@ -393,6 +519,7 @@ export default function UploadLibraryPage() {
               </button>
 
               <button
+                type="button"
                 onClick={() => setSelectedIds([])}
                 style={{
                   background: 'none',
@@ -431,6 +558,7 @@ export default function UploadLibraryPage() {
                 Adjust your filters or search terms to locate your files.
               </div>
               <button
+                type="button"
                 onClick={() => {
                   setSearch('');
                   setProjectFilter('all');
@@ -581,7 +709,8 @@ export default function UploadLibraryPage() {
                             </Link>
                             <span style={{ color: 'var(--card-border)' }}>|</span>
                             <button
-                              onClick={() => handleDelete(u)}
+                              type="button"
+                              onClick={() => handleDeleteTrigger(u)}
                               style={{
                                 background: 'none',
                                 border: 'none',
@@ -606,6 +735,190 @@ export default function UploadLibraryPage() {
             </div>
           )}
         </>
+      )}
+
+      {/* Confirmation Modal Overlay */}
+      {confirmModal.isOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'var(--overlay)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '1rem',
+        }}>
+          <div style={{
+            background: 'var(--card)',
+            border: '1px solid var(--card-border)',
+            borderRadius: '12px',
+            width: '100%',
+            maxWidth: '500px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4)',
+            overflow: 'hidden',
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              padding: '1.25rem 1.5rem',
+              borderBottom: '1px solid var(--card-border)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: 'var(--foreground)' }}>
+                {confirmModal.title}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setConfirmModal((prev) => ({ ...prev, isOpen: false }))}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--muted)',
+                  cursor: 'pointer',
+                  fontSize: '1.25rem',
+                  lineHeight: 1,
+                  padding: 0,
+                }}
+                onMouseOver={(e) => e.currentTarget.style.color = 'var(--foreground)'}
+                onMouseOut={(e) => e.currentTarget.style.color = 'var(--muted)'}
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(45, 49, 72, 0.3)', paddingBottom: '0.5rem' }}>
+                  <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Affected Uploads</span>
+                  <span style={{ color: 'var(--foreground)', fontSize: '0.85rem', fontWeight: 600 }}>
+                    {confirmModal.affectedUploads.length} file{confirmModal.affectedUploads.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(45, 49, 72, 0.3)', paddingBottom: '0.5rem' }}>
+                  <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Cleaned Rows Affected</span>
+                  <span style={{ color: 'var(--foreground)', fontSize: '0.85rem', fontWeight: 600 }}>
+                    {modalCleanedRows.toLocaleString()}
+                  </span>
+                </div>
+
+                {confirmModal.type === 'assign_bulk' && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(45, 49, 72, 0.3)', paddingBottom: '0.5rem' }}>
+                    <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Target Project</span>
+                    <span style={{ color: 'var(--accent)', fontSize: '0.85rem', fontWeight: 700 }}>
+                      {confirmModal.targetProjectName}
+                    </span>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', paddingTop: '0.25rem' }}>
+                  <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>File List</span>
+                  <div style={{
+                    maxHeight: '120px',
+                    overflowY: 'auto',
+                    background: 'var(--background)',
+                    borderRadius: '6px',
+                    border: '1px solid var(--card-border)',
+                    padding: '0.5rem',
+                  }}>
+                    {renderFileList(confirmModal.affectedUploads.map((u) => u.filename))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Warning message for deletes */}
+              {(confirmModal.type === 'delete_single' || confirmModal.type === 'delete_bulk') && (
+                <div style={{
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  border: '1px solid var(--danger)',
+                  borderRadius: '8px',
+                  padding: '0.75rem 1rem',
+                  color: 'var(--danger)',
+                  fontSize: '0.82rem',
+                  lineHeight: '1.4',
+                  fontWeight: 500,
+                }}>
+                  This will permanently remove all imported rows tied to these uploads from the database. This action cannot be undone.
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{
+              padding: '1rem 1.5rem',
+              background: 'var(--background)',
+              borderTop: '1px solid var(--card-border)',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: '0.75rem',
+            }}>
+              <button
+                type="button"
+                onClick={() => setConfirmModal((prev) => ({ ...prev, isOpen: false }))}
+                style={{
+                  background: 'none',
+                  border: '1px solid var(--card-border)',
+                  color: 'var(--foreground)',
+                  borderRadius: '6px',
+                  padding: '0.5rem 1rem',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'background 0.15s ease',
+                }}
+                onMouseOver={(e) => e.currentTarget.style.background = 'var(--card-border)'}
+                onMouseOut={(e) => e.currentTarget.style.background = 'none'}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirmModal.type === 'delete_single') {
+                    executeDeleteSingle(confirmModal.affectedUploads[0]);
+                  } else if (confirmModal.type === 'delete_bulk') {
+                    executeDeleteBulk(confirmModal.affectedUploads);
+                  } else if (confirmModal.type === 'assign_bulk') {
+                    executeBulkAssign(
+                      confirmModal.affectedUploads,
+                      confirmModal.targetProjectId,
+                      confirmModal.targetProjectName || ''
+                    );
+                  }
+                }}
+                style={{
+                  background: (confirmModal.type === 'delete_single' || confirmModal.type === 'delete_bulk') ? 'var(--danger)' : 'var(--accent)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '0.5rem 1.25rem',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'background 0.15s ease',
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.background = (confirmModal.type === 'delete_single' || confirmModal.type === 'delete_bulk')
+                    ? '#dc2626'
+                    : 'var(--accent-hover)';
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.background = (confirmModal.type === 'delete_single' || confirmModal.type === 'delete_bulk')
+                    ? 'var(--danger)'
+                    : 'var(--accent)';
+                }}
+              >
+                {confirmModal.type === 'assign_bulk' ? 'Confirm Assignment' : 'Confirm Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

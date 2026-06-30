@@ -3,10 +3,12 @@
 import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import * as db from '@/lib/db';
-import { filterRowsBySite, getSelectedSite, siteSelectionLabel, type SiteSelection, getSelectedProjectId } from '@/lib/storage';
-import type { UploadRecord, KeywordRecord, BacklinkRecord, CompetitorPageRecord, KeywordGapRecord, DedupeReport } from '@/lib/types';
+import { filterRowsBySite, getSelectedSite, siteSelectionLabel, type SiteSelection, getSelectedProjectId, subscribeProjectScopeChange } from '@/lib/storage';
+import type { UploadRecord, KeywordRecord, BacklinkRecord, CompetitorPageRecord, KeywordGapRecord, DedupeReport, ProjectRecord, ReferringDomainRecord, AnchorTextRecord } from '@/lib/types';
 import Card from '@/components/Card';
 import { buildOpportunityQueue } from '@/lib/opportunity-queue';
+import { calculateDataHealth } from '@/lib/data-health';
+import { convertHealthIssueToQueueItem } from '@/lib/health-action-items';
 import { BarChart2, Search } from 'lucide-react';
 import type { OpportunityWorkflowStatus } from '@/lib/opportunity-workflow';
 import {
@@ -23,9 +25,12 @@ export default function DashboardPage() {
   const [competitors, setCompetitors] = useState<CompetitorPageRecord[]>([]);
   const [gaps, setGaps] = useState<KeywordGapRecord[]>([]);
   const [dedupeReports, setDedupeReports] = useState<DedupeReport[]>([]);
+  const [projects, setProjects] = useState<ProjectRecord[]>([]);
+  const [referringDomains, setReferringDomains] = useState<ReferringDomainRecord[]>([]);
+  const [anchorTexts, setAnchorTexts] = useState<AnchorTextRecord[]>([]);
   const [selectedSite, setSelectedSiteState] = useState<SiteSelection>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'all' | 'content' | 'gap' | 'backlink' | 'competitor'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'content' | 'gap' | 'backlink' | 'competitor' | 'health'>('all');
 
   const [workflowMap, setWorkflowMap] = useState<Record<string, OpportunityWorkflowStatus>>({});
   const [statusFilter, setStatusFilter] = useState<'Active' | OpportunityWorkflowStatus | 'All'>('Active');
@@ -44,10 +49,19 @@ export default function DashboardPage() {
       db.getCompetitorPages(),
       db.getKeywordGaps(),
       db.getDedupeReports(),
-    ]).then(([u, kw, bl, cp, kg, dr]) => {
+      db.getProjects(),
+      db.getReferringDomains(),
+      db.getAnchorTexts(),
+    ]).then(([u, kw, bl, cp, kg, dr, proj, rd, at]) => {
       setUploads(u); setKeywords(kw); setBacklinks(bl);
       setCompetitors(cp); setGaps(kg); setDedupeReports(dr);
+      setProjects(proj); setReferringDomains(rd); setAnchorTexts(at);
     }).finally(() => setLoading(false));
+
+    const unsubscribe = subscribeProjectScopeChange(() => {
+      setSelectedSiteState(getSelectedSite());
+    });
+    return () => unsubscribe();
   }, []);
 
   const handleStatusChange = (id: string, newStatus: OpportunityWorkflowStatus) => {
@@ -56,7 +70,7 @@ export default function DashboardPage() {
     saveOpportunityWorkflowMap(updated);
   };
 
-  const selectedProjectId = getSelectedProjectId();
+  const selectedProjectId = useMemo(() => getSelectedProjectId(), [selectedSite]);
   const scopedUploads = selectedProjectId
     ? uploads.filter((u) => u.projectId === selectedProjectId)
     : uploads;
@@ -70,9 +84,48 @@ export default function DashboardPage() {
   const recentUploads = scopedUploads.slice(0, 5);
   const scopeLabel = siteSelectionLabel(selectedSite);
 
+  const healthSummary = useMemo(() => {
+    return calculateDataHealth(
+      uploads,
+      projects,
+      keywords,
+      gaps,
+      competitors,
+      backlinks,
+      referringDomains,
+      anchorTexts,
+      dedupeReports,
+      selectedProjectId
+    );
+  }, [uploads, projects, keywords, gaps, competitors, backlinks, referringDomains, anchorTexts, dedupeReports, selectedProjectId]);
+
   const queue = useMemo(() => {
-    return buildOpportunityQueue(scopedKeywords, scopedGaps, scopedBacklinks, scopedCompetitors);
-  }, [scopedKeywords, scopedGaps, scopedBacklinks, scopedCompetitors]);
+    const normalQueue = buildOpportunityQueue(scopedKeywords, scopedGaps, scopedBacklinks, scopedCompetitors);
+    const healthQueueItems = (healthSummary.issues || []).map((issue) =>
+      convertHealthIssueToQueueItem(issue, selectedProjectId)
+    );
+    const merged = [...normalQueue, ...healthQueueItems];
+    const sorted = merged.sort((a, b) => {
+      if (b.score !== a.score) {
+        return b.score - a.score;
+      }
+      if (b.impact !== a.impact) {
+        return b.impact - a.impact;
+      }
+      const cmp = a.title.localeCompare(b.title);
+      if (cmp !== 0) return cmp;
+      return a.id.localeCompare(b.id);
+    });
+    const seen = new Set<string>();
+    const deduped: typeof sorted = [];
+    for (const item of sorted) {
+      if (!seen.has(item.id)) {
+        seen.add(item.id);
+        deduped.push(item);
+      }
+    }
+    return deduped;
+  }, [scopedKeywords, scopedGaps, scopedBacklinks, scopedCompetitors, healthSummary, selectedProjectId]);
 
   const enrichedQueue = useMemo(() => {
     return queue.map((item) => ({
@@ -135,6 +188,7 @@ export default function DashboardPage() {
       gap: filtered.filter((x) => x.type === 'gap').length,
       backlink: filtered.filter((x) => x.type === 'backlink').length,
       competitor: filtered.filter((x) => x.type === 'competitor').length,
+      health: filtered.filter((x) => x.type === 'health').length,
     };
   }, [enrichedQueue, statusFilter]);
 
@@ -208,7 +262,7 @@ export default function DashboardPage() {
             <p style={{ color: 'var(--muted)', fontSize: '0.8rem', marginTop: '0.15rem', marginBottom: '0.4rem' }}>
               Prioritized action items generated from keyword, gap, competitor page, and backlink data.
             </p>
-            {!loading && uploads.length > 0 && queue.length > 0 && (
+            {!loading && queue.length > 0 && (
               <div style={{ display: 'flex', gap: '0.85rem', fontSize: '0.75rem', color: 'var(--muted)', flexWrap: 'wrap', alignItems: 'center' }}>
                 <span>Active: <strong style={{ color: 'var(--foreground)' }}>{totalActive}</strong></span>
                 <span style={{ color: 'var(--card-border)' }}>|</span>
@@ -219,7 +273,7 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {!loading && uploads.length > 0 && queue.length > 0 && (
+          {!loading && queue.length > 0 && (
             <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
               {(
                 [
@@ -228,12 +282,14 @@ export default function DashboardPage() {
                   { id: 'gap', label: 'Keyword Gaps', count: typeCounts.gap },
                   { id: 'backlink', label: 'Backlinks', count: typeCounts.backlink },
                   { id: 'competitor', label: 'Competitors', count: typeCounts.competitor },
+                  { id: 'health', label: 'Data Health', count: typeCounts.health },
                 ] as const
               ).map((tabOption) => {
                 const isActive = activeTab === tabOption.id;
                 return (
                   <button
                     key={tabOption.id}
+                    type="button"
                     onClick={() => setActiveTab(tabOption.id)}
                     style={{
                       padding: '0.35rem 0.75rem',
@@ -258,7 +314,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Filter bar for Status */}
-        {!loading && uploads.length > 0 && queue.length > 0 && (
+        {!loading && queue.length > 0 && (
           <div style={{
             display: 'flex',
             justifyContent: 'space-between',
@@ -300,6 +356,7 @@ export default function DashboardPage() {
                 return (
                   <button
                     key={statusOption.id}
+                    type="button"
                     onClick={() => setStatusFilter(statusOption.id)}
                     style={{
                       padding: '0.25rem 0.65rem',
@@ -327,49 +384,51 @@ export default function DashboardPage() {
           <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--muted)', fontSize: '0.875rem' }}>
             Loading opportunities…
           </div>
-        ) : uploads.length === 0 ? (
-          <div style={{ padding: '2.5rem', textAlign: 'center', background: 'rgba(255,255,255,0.01)', borderRadius: '8px', border: '1px dashed var(--card-border)' }}>
-            <div style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '48px',
-              height: '48px',
-              borderRadius: '50%',
-              background: 'rgba(99, 102, 241, 0.08)',
-              color: 'var(--accent)',
-              marginBottom: '0.75rem'
-            }}>
-              <BarChart2 size={24} />
-            </div>
-            <h4 style={{ fontWeight: 600, fontSize: '0.95rem', marginBottom: '0.25rem' }}>No Data Available</h4>
-            <p style={{ color: 'var(--muted)', fontSize: '0.82rem', marginBottom: '1.25rem', maxWidth: '400px', margin: '0.25rem auto 1.25rem' }}>
-              Upload search volume, gap, competitor, or backlink CSV reports to generate ranked tasks.
-            </p>
-            <Link href="/upload" style={{ display: 'inline-block', background: 'var(--accent)', color: '#fff', padding: '0.45rem 1.2rem', borderRadius: '6px', fontSize: '0.82rem', fontWeight: 600, textDecoration: 'none' }}>
-              Go to Upload Center
-            </Link>
-          </div>
         ) : queue.length === 0 ? (
-          <div style={{ padding: '2.5rem', textAlign: 'center', background: 'rgba(255,255,255,0.01)', borderRadius: '8px', border: '1px dashed var(--card-border)' }}>
-            <div style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '48px',
-              height: '48px',
-              borderRadius: '50%',
-              background: 'rgba(99, 102, 241, 0.08)',
-              color: 'var(--accent)',
-              marginBottom: '0.75rem'
-            }}>
-              <Search size={24} />
+          uploads.length === 0 ? (
+            <div style={{ padding: '2.5rem', textAlign: 'center', background: 'rgba(255,255,255,0.01)', borderRadius: '8px', border: '1px dashed var(--card-border)' }}>
+              <div style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '48px',
+                height: '48px',
+                borderRadius: '50%',
+                background: 'rgba(99, 102, 241, 0.08)',
+                color: 'var(--accent)',
+                marginBottom: '0.75rem'
+              }}>
+                <BarChart2 size={24} />
+              </div>
+              <h4 style={{ fontWeight: 600, fontSize: '0.95rem', marginBottom: '0.25rem' }}>No Data Available</h4>
+              <p style={{ color: 'var(--muted)', fontSize: '0.82rem', marginBottom: '1.25rem', maxWidth: '400px', margin: '0.25rem auto 1.25rem' }}>
+                Upload search volume, gap, competitor, backlink CSV reports, or check data health issues to generate ranked tasks.
+              </p>
+              <Link href="/upload" style={{ display: 'inline-block', background: 'var(--accent)', color: '#fff', padding: '0.45rem 1.2rem', borderRadius: '6px', fontSize: '0.82rem', fontWeight: 600, textDecoration: 'none' }}>
+                Go to Upload Center
+              </Link>
             </div>
-            <h4 style={{ fontWeight: 600, fontSize: '0.95rem', marginBottom: '0.25rem' }}>No opportunities in active project</h4>
-            <p style={{ color: 'var(--muted)', fontSize: '0.82rem', maxWidth: '480px', margin: '0.25rem auto 0' }}>
-              The active project scope <strong>{scopeLabel}</strong> has no eligible opportunities. Try uploading keyword gap, competitor, backlink, or high-scoring keyword reports and assign them to this project.
-            </p>
-          </div>
+          ) : (
+            <div style={{ padding: '2.5rem', textAlign: 'center', background: 'rgba(255,255,255,0.01)', borderRadius: '8px', border: '1px dashed var(--card-border)' }}>
+              <div style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '48px',
+                height: '48px',
+                borderRadius: '50%',
+                background: 'rgba(99, 102, 241, 0.08)',
+                color: 'var(--accent)',
+                marginBottom: '0.75rem'
+              }}>
+                <Search size={24} />
+              </div>
+              <h4 style={{ fontWeight: 600, fontSize: '0.95rem', marginBottom: '0.25rem' }}>No opportunities in active project</h4>
+              <p style={{ color: 'var(--muted)', fontSize: '0.82rem', maxWidth: '480px', margin: '0.25rem auto 0' }}>
+                The active project scope <strong>{scopeLabel}</strong> has no eligible opportunities. Try uploading keyword gap, competitor, backlink, or high-scoring keyword reports and assign them to this project, or run data health audits.
+              </p>
+            </div>
+          )
         ) : filteredQueue.length === 0 ? (
           <div style={{ padding: '2.5rem', textAlign: 'center', background: 'rgba(255,255,255,0.01)', borderRadius: '8px', border: '1px dashed var(--card-border)' }}>
             <div style={{
@@ -387,9 +446,10 @@ export default function DashboardPage() {
             </div>
             <h4 style={{ fontWeight: 600, fontSize: '0.95rem', marginBottom: '0.25rem' }}>No matching opportunities</h4>
             <p style={{ color: 'var(--muted)', fontSize: '0.82rem', marginBottom: '1.25rem', maxWidth: '400px', margin: '0.25rem auto 1.25rem' }}>
-              Your current filters (Type: <strong>{activeTab === 'all' ? 'All' : activeTab === 'content' ? 'Content' : activeTab === 'gap' ? 'Keyword Gaps' : activeTab === 'backlink' ? 'Backlinks' : 'Competitors'}</strong>, Status: <strong>{statusFilter}</strong>) hid all opportunities.
+              Your current filters (Type: <strong>{activeTab === 'all' ? 'All' : activeTab === 'content' ? 'Content' : activeTab === 'gap' ? 'Keyword Gaps' : activeTab === 'backlink' ? 'Backlinks' : activeTab === 'competitor' ? 'Competitors' : 'Data Health'}</strong>, Status: <strong>{statusFilter}</strong>) hid all opportunities.
             </p>
             <button
+              type="button"
               onClick={() => {
                 setActiveTab('all');
                 setStatusFilter('Active');
@@ -447,6 +507,9 @@ export default function DashboardPage() {
                       impactText = `DA: ${item.impact}`;
                     } else if (item.type === 'competitor') {
                       impactText = item.impact > 0 ? `Traffic: ${item.impact.toLocaleString()}` : 'Traffic: -';
+                    } else if (item.type === 'health') {
+                      const label = item.impact === 3 ? 'Critical' : item.impact === 2 ? 'Warning' : 'Info';
+                      impactText = `Impact: ${label}`;
                     }
 
                     const statusColor = STATUS_COLORS[item.status];

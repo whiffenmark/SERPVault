@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { updateStore, getSelectedSite, filterRowsBySite, siteSelectionLabel, type SiteSelection } from '@/lib/storage';
+import { updateStore, getSelectedSite, filterRowsBySite, siteSelectionLabel, type SiteSelection, subscribeProjectScopeChange } from '@/lib/storage';
 import * as db from '@/lib/db';
 import type { CompetitorPageRecord, Tag } from '@/lib/types';
 import DataTable from '@/components/DataTable';
@@ -17,6 +17,11 @@ export default function CompetitorPagesPage() {
   useEffect(() => {
     setSelectedSite(getSelectedSite());
     db.getCompetitorPages().then(setRows).finally(() => setLoading(false));
+
+    const unsubscribe = subscribeProjectScopeChange(() => {
+      setSelectedSite(getSelectedSite());
+    });
+    return () => unsubscribe();
   }, []);
 
   const handleTagChange = useCallback(async (id: string, tag: Tag | undefined) => {

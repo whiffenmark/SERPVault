@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { Search, FileDown, Copy, Check, ExternalLink, FileText, ChevronRight, AlertCircle } from 'lucide-react';
 import * as db from '@/lib/db';
-import { getSelectedSite, filterRowsBySite, siteSelectionLabel, type SiteSelection } from '@/lib/storage';
+import { getSelectedSite, filterRowsBySite, siteSelectionLabel, type SiteSelection, subscribeProjectScopeChange } from '@/lib/storage';
 import type { KeywordRecord, KeywordGapRecord, CompetitorPageRecord, BacklinkRecord, Tag } from '@/lib/types';
 import Card from '@/components/Card';
 import ScoreBadge from '@/components/ScoreBadge';
@@ -55,6 +55,11 @@ export default function ContentBriefsPage() {
       .finally(() => {
         setLoading(false);
       });
+
+    const unsubscribe = subscribeProjectScopeChange(() => {
+      setSelectedSiteState(getSelectedSite());
+    });
+    return () => unsubscribe();
   }, []);
 
   // Filter raw rows by project site selection

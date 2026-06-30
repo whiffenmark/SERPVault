@@ -9,7 +9,14 @@ import {
   siteSelectionLabel,
   siteSelectionSlug,
   type SiteSelection,
+  subscribeProjectScopeChange,
 } from '@/lib/storage';
+import {
+  getExportHistory,
+  addExportHistoryItem,
+  clearExportHistory,
+  type ExportHistoryItem,
+} from '@/lib/export-history';
 import {
   exportKeywordsCSV,
   exportBacklinksCSV,
@@ -25,6 +32,8 @@ import {
   exportExecutiveStrategyReportMD,
 } from '@/lib/export';
 import { buildOpportunityQueue } from '@/lib/opportunity-queue';
+import { calculateDataHealth } from '@/lib/data-health';
+import { convertHealthIssueToQueueItem } from '@/lib/health-action-items';
 import { getOpportunityWorkflowMap, type OpportunityWorkflowStatus } from '@/lib/opportunity-workflow';
 import { getActionPlanMetadataMap, type ActionPlanItemMetadata } from '@/lib/action-plan-metadata';
 import { buildContentBriefs } from '@/lib/content-briefs';
@@ -36,6 +45,10 @@ import type {
   KeywordGapRecord,
   ReferringDomainRecord,
   CompetitorRecord,
+  UploadRecord,
+  ProjectRecord,
+  AnchorTextRecord,
+  DedupeReport,
 } from '@/lib/types';
 
 export default function ExportPage() {
@@ -50,9 +63,14 @@ export default function ExportPage() {
   const [competitorPages, setCompetitorPages] = useState<CompetitorPageRecord[]>([]);
   const [referringDomains, setReferringDomains] = useState<ReferringDomainRecord[]>([]);
   const [projectCompetitors, setProjectCompetitors] = useState<CompetitorRecord[]>([]);
+  const [uploads, setUploads] = useState<UploadRecord[]>([]);
+  const [projects, setProjects] = useState<ProjectRecord[]>([]);
+  const [anchorTexts, setAnchorTexts] = useState<AnchorTextRecord[]>([]);
+  const [dedupeReports, setDedupeReports] = useState<DedupeReport[]>([]);
   const [workflowMap, setWorkflowMap] = useState<Record<string, OpportunityWorkflowStatus>>({});
   const [metadataMap, setMetadataMap] = useState<Record<string, ActionPlanItemMetadata>>({});
   const [loading, setLoading] = useState(true);
+  const [history, setHistory] = useState<ExportHistoryItem[]>([]);
 
   useEffect(() => {
     const site = getSelectedSite();
@@ -64,6 +82,8 @@ export default function ExportPage() {
     const mMap = getActionPlanMetadataMap();
     setMetadataMap(mMap);
 
+    setHistory(getExportHistory());
+
     Promise.all([
       db.getKeywords(),
       db.getKeywordGaps(),
@@ -71,16 +91,29 @@ export default function ExportPage() {
       db.getCompetitorPages(),
       db.getReferringDomains(),
       db.getCompetitors(),
+      db.getUploads(),
+      db.getProjects(),
+      db.getAnchorTexts(),
+      db.getDedupeReports(),
     ])
-      .then(([kws, gaps, bls, pages, domains, comps]) => {
+      .then(([kws, gaps, bls, pages, domains, comps, ups, projs, anchors, dedupes]) => {
         setKeywords(kws);
         setKeywordGaps(gaps);
         setBacklinks(bls);
         setCompetitorPages(pages);
         setReferringDomains(domains);
         setProjectCompetitors(comps);
+        setUploads(ups);
+        setProjects(projs);
+        setAnchorTexts(anchors);
+        setDedupeReports(dedupes);
       })
       .finally(() => setLoading(false));
+
+    const unsubscribe = subscribeProjectScopeChange(() => {
+      setSelectedSiteState(getSelectedSite());
+    });
+    return () => unsubscribe();
   }, []);
 
   const scopeLabel = siteSelectionLabel(selectedSite);
@@ -99,10 +132,51 @@ export default function ExportPage() {
     return projectCompetitors.filter((comp) => comp.projectId === selectedProjectId);
   }, [projectCompetitors, selectedProjectId]);
 
+  const healthSummary = useMemo(() => {
+    return calculateDataHealth(
+      uploads,
+      projects,
+      keywords,
+      keywordGaps,
+      competitorPages,
+      backlinks,
+      referringDomains,
+      anchorTexts,
+      dedupeReports,
+      selectedProjectId
+    );
+  }, [uploads, projects, keywords, keywordGaps, competitorPages, backlinks, referringDomains, anchorTexts, dedupeReports, selectedProjectId]);
+
+  const healthQueueItems = useMemo(() => {
+    const issues = healthSummary.issues || [];
+    return issues.map((issue) => convertHealthIssueToQueueItem(issue, selectedProjectId));
+  }, [healthSummary, selectedProjectId]);
+
   // Derived deliverables and strategic content
   const queue = useMemo(() => {
-    return buildOpportunityQueue(scopedKeywords, scopedKeywordGaps, scopedBacklinks, scopedCompetitorPages);
-  }, [scopedKeywords, scopedKeywordGaps, scopedBacklinks, scopedCompetitorPages]);
+    const normalQueue = buildOpportunityQueue(scopedKeywords, scopedKeywordGaps, scopedBacklinks, scopedCompetitorPages);
+    const merged = [...normalQueue, ...healthQueueItems];
+    const sorted = merged.sort((a, b) => {
+      if (b.score !== a.score) {
+        return b.score - a.score;
+      }
+      if (b.impact !== a.impact) {
+        return b.impact - a.impact;
+      }
+      const cmp = a.title.localeCompare(b.title);
+      if (cmp !== 0) return cmp;
+      return a.id.localeCompare(b.id);
+    });
+    const seen = new Set<string>();
+    const deduped: typeof sorted = [];
+    for (const item of sorted) {
+      if (!seen.has(item.id)) {
+        seen.add(item.id);
+        deduped.push(item);
+      }
+    }
+    return deduped;
+  }, [scopedKeywords, scopedKeywordGaps, scopedBacklinks, scopedCompetitorPages, healthQueueItems]);
 
   const enrichedQueue = useMemo(() => {
     return queue.map((item) => {
@@ -154,17 +228,53 @@ export default function ExportPage() {
     });
   }, [scopedKeywords]);
 
-  async function run(label: string, fn: () => void) {
+  async function run(
+    label: string,
+    fn: () => void,
+    title: string,
+    category: string,
+    countVal: string
+  ) {
     setBusy(label);
     try {
       fn();
       setMessage('✓ Deliverable generated — check your downloads folder.');
+
+      const updated = addExportHistoryItem({
+        title,
+        category,
+        scopeLabel,
+        scopeSlug,
+        details: countVal,
+        count: countVal,
+      });
+      setHistory(updated);
     } catch (e) {
       setMessage(`Error: ${String(e)}`);
     }
     setBusy('');
     setTimeout(() => setMessage(''), 4000);
   }
+
+  const handleClearHistory = () => {
+    clearExportHistory();
+    setHistory([]);
+  };
+
+  const formatTime = (isoString: string) => {
+    try {
+      const date = new Date(isoString);
+      return date.toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+      }) + ' ' + date.toLocaleTimeString(undefined, {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return isoString;
+    }
+  };
 
   // Organized deliverables
   const sections = [
@@ -178,22 +288,28 @@ export default function ExportPage() {
           icon: '👑',
           description: 'A comprehensive, multi-section strategy report combining scope summary, SEO dataset metrics, workflow counters, top opportunities, and competitor summaries.',
           count: loading ? 'Calculating...' : 'Ready (Client-ready Markdown)',
-          action: () => run('exec', () => exportExecutiveStrategyReportMD({
-            scopeLabel,
-            scopeSlug,
-            selectedSite,
-            counts: {
-              keywords: scopedKeywords.length,
-              gaps: scopedKeywordGaps.length,
-              backlinks: scopedBacklinks.length,
-              pages: scopedCompetitorPages.length,
-              domains: scopedReferringDomains.length,
-            },
-            workflowCounts,
-            topOpportunities: queue,
-            topBriefs: briefs,
-            topCompetitors: competitorSummaries,
-          })),
+          action: () => run(
+            'exec',
+            () => exportExecutiveStrategyReportMD({
+              scopeLabel,
+              scopeSlug,
+              selectedSite,
+              counts: {
+                keywords: scopedKeywords.length,
+                gaps: scopedKeywordGaps.length,
+                backlinks: scopedBacklinks.length,
+                pages: scopedCompetitorPages.length,
+                domains: scopedReferringDomains.length,
+              },
+              workflowCounts,
+              topOpportunities: queue,
+              topBriefs: briefs,
+              topCompetitors: competitorSummaries,
+            }),
+            'Executive SEO Strategy Report',
+            'Executive Strategy & Client Reports',
+            loading ? 'Calculating...' : 'Ready (Client-ready Markdown)'
+          ),
         },
         {
           id: 'md',
@@ -201,7 +317,13 @@ export default function ExportPage() {
           icon: '📋',
           description: 'Formatted Markdown action plan highlighting top keyword opportunities, backlink targets, and competitor pages.',
           count: loading ? 'Calculating...' : `Includes top ${Math.min(20, scopedKeywords.length)} keyword opportunities`,
-          action: () => run('md', () => exportActionPlanMD(scopedKeywords, scopedBacklinks, scopedCompetitorPages, scopeLabel, scopeSlug)),
+          action: () => run(
+            'md',
+            () => exportActionPlanMD(scopedKeywords, scopedBacklinks, scopedCompetitorPages, scopeLabel, scopeSlug),
+            'Top SEO Action Plan',
+            'Executive Strategy & Client Reports',
+            loading ? 'Calculating...' : `Includes top ${Math.min(20, scopedKeywords.length)} keyword opportunities`
+          ),
         },
         {
           id: 'intel',
@@ -209,7 +331,13 @@ export default function ExportPage() {
           icon: '🕵️‍♂️',
           description: 'Analyzes competitor domains showing organic traffic, pages, gaps, link prospects, referring domains, and opportunity scores.',
           count: loading ? 'Calculating...' : `${competitorSummaries.length} competitor domains analyzed`,
-          action: () => run('intel', () => exportCompetitiveIntelMD(competitorSummaries, scopeLabel, scopeSlug)),
+          action: () => run(
+            'intel',
+            () => exportCompetitiveIntelMD(competitorSummaries, scopeLabel, scopeSlug),
+            'Competitive Intelligence Report',
+            'Executive Strategy & Client Reports',
+            loading ? 'Calculating...' : `${competitorSummaries.length} competitor domains analyzed`
+          ),
         },
       ]
     },
@@ -223,7 +351,13 @@ export default function ExportPage() {
           icon: '📦',
           description: 'Combines all generated keyword cluster content briefs into a single Markdown file, complete with outlines, SEO checklists, and a table of contents.',
           count: loading ? 'Calculating...' : `${briefs.length} briefs ready for content writers`,
-          action: () => run('briefs', () => exportContentBriefPackMD(briefs, scopeLabel, scopeSlug)),
+          action: () => run(
+            'briefs',
+            () => exportContentBriefPackMD(briefs, scopeLabel, scopeSlug),
+            'Content Brief Pack',
+            'Execution & Team Deliverables',
+            loading ? 'Calculating...' : `${briefs.length} briefs ready for content writers`
+          ),
         },
         {
           id: 'wf-csv',
@@ -231,7 +365,13 @@ export default function ExportPage() {
           icon: '📅',
           description: 'Monitored campaign tasks in Planned, In Progress, and Done stages with owners, due dates, and notes.',
           count: loading ? 'Calculating...' : `${workflowCounts.planned} planned, ${workflowCounts.inProgress} in progress, ${workflowCounts.done} done`,
-          action: () => run('wf-csv', () => exportWorkflowActionPlanCSV(actionPlanQueue, scopeSlug)),
+          action: () => run(
+            'wf-csv',
+            () => exportWorkflowActionPlanCSV(actionPlanQueue, scopeSlug),
+            'Workflow Action Plan (CSV)',
+            'Execution & Team Deliverables',
+            loading ? 'Calculating...' : `${workflowCounts.planned} planned, ${workflowCounts.inProgress} in progress, ${workflowCounts.done} done`
+          ),
         },
         {
           id: 'wf-md',
@@ -239,7 +379,13 @@ export default function ExportPage() {
           icon: '📝',
           description: 'Tracked opportunities filtered to actionable workflow statuses formatted in a Markdown table for clean execution logs.',
           count: loading ? 'Calculating...' : `${workflowCounts.planned} planned, ${workflowCounts.inProgress} in progress, ${workflowCounts.done} done`,
-          action: () => run('wf-md', () => exportWorkflowActionPlanMD(actionPlanQueue, scopeLabel, scopeSlug)),
+          action: () => run(
+            'wf-md',
+            () => exportWorkflowActionPlanMD(actionPlanQueue, scopeLabel, scopeSlug),
+            'Workflow Action Plan (Markdown)',
+            'Execution & Team Deliverables',
+            loading ? 'Calculating...' : `${workflowCounts.planned} planned, ${workflowCounts.inProgress} in progress, ${workflowCounts.done} done`
+          ),
         },
       ]
     },
@@ -253,7 +399,13 @@ export default function ExportPage() {
           icon: '◈',
           description: 'Every keyword with monthly search volume, keyword difficulty, CPC, intent, tag, and opportunity score.',
           count: loading ? 'Calculating...' : `${scopedKeywords.length.toLocaleString()} keywords`,
-          action: () => run('kw', () => exportKeywordsCSV(scopedKeywords, scopeSlug)),
+          action: () => run(
+            'kw',
+            () => exportKeywordsCSV(scopedKeywords, scopeSlug),
+            'All Keywords CSV',
+            'Raw SEO Datasets & Bulk Exports',
+            loading ? 'Calculating...' : `${scopedKeywords.length.toLocaleString()} keywords`
+          ),
         },
         {
           id: 'bl',
@@ -261,7 +413,13 @@ export default function ExportPage() {
           icon: '⛓',
           description: 'Every backlink with source/target URLs, anchor text, domain authority, tag, and opportunity score.',
           count: loading ? 'Calculating...' : `${scopedBacklinks.length.toLocaleString()} backlinks`,
-          action: () => run('bl', () => exportBacklinksCSV(scopedBacklinks, scopeSlug)),
+          action: () => run(
+            'bl',
+            () => exportBacklinksCSV(scopedBacklinks, scopeSlug),
+            'All Backlinks CSV',
+            'Raw SEO Datasets & Bulk Exports',
+            loading ? 'Calculating...' : `${scopedBacklinks.length.toLocaleString()} backlinks`
+          ),
         },
         {
           id: 'cp',
@@ -269,7 +427,13 @@ export default function ExportPage() {
           icon: '✎',
           description: 'Only tagged (non-Ignore) keywords as a prioritized content calendar.',
           count: loading ? 'Calculating...' : `${scopedKeywords.filter((k) => k.tag && k.tag !== 'Ignore').length.toLocaleString()} tagged keywords`,
-          action: () => run('cp', () => exportContentPlanCSV(scopedKeywords, scopeSlug)),
+          action: () => run(
+            'cp',
+            () => exportContentPlanCSV(scopedKeywords, scopeSlug),
+            'Content Plan CSV',
+            'Raw SEO Datasets & Bulk Exports',
+            loading ? 'Calculating...' : `${scopedKeywords.filter((k) => k.tag && k.tag !== 'Ignore').length.toLocaleString()} tagged keywords`
+          ),
         },
         {
           id: 'hcsv',
@@ -277,7 +441,13 @@ export default function ExportPage() {
           icon: '📋',
           description: 'Hermes keyword_report data (cluster/page_target) exported as CSV. Uses only existing keyword data with safe raw fallbacks.',
           count: loading ? 'Calculating...' : (hermesKeywords.length > 0 ? `${hermesKeywords.length.toLocaleString()} Hermes keywords` : 'No Hermes data'),
-          action: () => run('hcsv', () => exportHermesContentPlanCSV(scopedKeywords, scopeSlug)),
+          action: () => run(
+            'hcsv',
+            () => exportHermesContentPlanCSV(scopedKeywords, scopeSlug),
+            'Hermes Content Plan CSV',
+            'Raw SEO Datasets & Bulk Exports',
+            loading ? 'Calculating...' : (hermesKeywords.length > 0 ? `${hermesKeywords.length.toLocaleString()} Hermes keywords` : 'No Hermes data')
+          ),
         },
         {
           id: 'hmd',
@@ -285,7 +455,13 @@ export default function ExportPage() {
           icon: '📝',
           description: 'Grouped Cluster → Page Target Markdown matching the Hermes planner view. Helpful empty state included when no data.',
           count: loading ? 'Calculating...' : (hermesKeywords.length > 0 ? `${hermesKeywords.length.toLocaleString()} Hermes keywords` : 'No Hermes data'),
-          action: () => run('hmd', () => exportHermesContentPlanMD(scopedKeywords, scopeLabel, scopeSlug)),
+          action: () => run(
+            'hmd',
+            () => exportHermesContentPlanMD(scopedKeywords, scopeLabel, scopeSlug),
+            'Hermes Content Plan Markdown',
+            'Raw SEO Datasets & Bulk Exports',
+            loading ? 'Calculating...' : (hermesKeywords.length > 0 ? `${hermesKeywords.length.toLocaleString()} Hermes keywords` : 'No Hermes data')
+          ),
         },
         {
           id: 'bt',
@@ -293,7 +469,13 @@ export default function ExportPage() {
           icon: '🎯',
           description: 'Rows tagged as "Backlink Target" — your link acquisition hit list.',
           count: loading ? 'Calculating...' : `${scopedBacklinks.filter((b) => b.tag === 'Backlink Target').length.toLocaleString()} targets`,
-          action: () => run('bt', () => exportBacklinkTargetsCSV(scopedBacklinks, scopeSlug)),
+          action: () => run(
+            'bt',
+            () => exportBacklinkTargetsCSV(scopedBacklinks, scopeSlug),
+            'Backlink Targets CSV',
+            'Raw SEO Datasets & Bulk Exports',
+            loading ? 'Calculating...' : `${scopedBacklinks.filter((b) => b.tag === 'Backlink Target').length.toLocaleString()} targets`
+          ),
         },
       ]
     }
@@ -388,6 +570,80 @@ export default function ExportPage() {
             </div>
           </div>
         ))}
+      </div>
+
+      <div style={{ marginTop: '2.5rem', background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '1.25rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <h3 style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: 0 }}>
+            Export History
+          </h3>
+          {history.length > 0 && (
+            <button
+              type="button"
+              onClick={handleClearHistory}
+              style={{
+                background: 'transparent',
+                color: '#ef4444',
+                border: '1px solid #ef444430',
+                borderRadius: '6px',
+                padding: '0.3rem 0.75rem',
+                cursor: 'pointer',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#ef444410';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+            >
+              Clear History
+            </button>
+          )}
+        </div>
+
+        {history.length === 0 ? (
+          <div style={{ fontSize: '0.82rem', color: 'var(--muted)', textAlign: 'center', padding: '1rem 0' }}>
+            No export history found. Run an export above to record history.
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', textAlign: 'left' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--card-border)', color: 'var(--muted)' }}>
+                  <th style={{ padding: '0.5rem', fontWeight: 600 }}>Time</th>
+                  <th style={{ padding: '0.5rem', fontWeight: 600 }}>Export Item</th>
+                  <th style={{ padding: '0.5rem', fontWeight: 600 }}>Category</th>
+                  <th style={{ padding: '0.5rem', fontWeight: 600 }}>Scope</th>
+                  <th style={{ padding: '0.5rem', fontWeight: 600 }}>Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.slice(0, 10).map((item) => (
+                  <tr key={item.id} style={{ borderBottom: '1px solid var(--card-border)' }}>
+                    <td style={{ padding: '0.5rem', color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+                      {formatTime(item.generatedAt)}
+                    </td>
+                    <td style={{ padding: '0.5rem', fontWeight: 600, color: 'var(--foreground)' }}>
+                      {item.title}
+                    </td>
+                    <td style={{ padding: '0.5rem', color: 'var(--muted)' }}>
+                      {item.category}
+                    </td>
+                    <td style={{ padding: '0.5rem', color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+                      {item.scopeLabel}
+                    </td>
+                    <td style={{ padding: '0.5rem', color: 'var(--accent)', fontWeight: 600 }}>
+                      {item.details}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <div style={{ marginTop: '2.5rem', background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '1.25rem' }}>

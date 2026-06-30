@@ -1,33 +1,52 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { updateStore, getSelectedSite, filterRowsBySite } from '@/lib/storage';
+import { updateStore, getSelectedSite, filterRowsBySite, subscribeProjectScopeChange } from '@/lib/storage';
 import * as db from '@/lib/db';
 import type { KeywordRecord, KeywordGapRecord, Tag } from '@/lib/types';
 import DataTable from '@/components/DataTable';
 import ScoreBadge from '@/components/ScoreBadge';
 import Card from '@/components/Card';
 import type { Column } from '@/components/DataTable';
+import { getKeywordGapOpportunityId } from '@/lib/opportunity-queue';
+import { getOpportunityWorkflowMap, saveOpportunityWorkflowMap, STATUS_COLORS, type OpportunityWorkflowStatus } from '@/lib/opportunity-workflow';
 
 type ContentRow = (KeywordRecord | KeywordGapRecord) & { _source: 'keyword' | 'gap' };
 
 export default function ContentPage() {
   const [rows, setRows] = useState<ContentRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [workflowMap, setWorkflowMap] = useState<Record<string, OpportunityWorkflowStatus>>({});
   const [tab, setTab] = useState<'all' | 'tagged' | 'gap'>('all');
   const [plannerExpanded, setPlannerExpanded] = useState(false);
 
-  useEffect(() => {
-    Promise.all([db.getKeywords(), db.getKeywordGaps()]).then(([kws, gaps]) => {
+  const loadData = useCallback(async (siteSelection = getSelectedSite()) => {
+    setLoading(true);
+    try {
+      const [kws, gaps] = await Promise.all([db.getKeywords(), db.getKeywordGaps()]);
       let all: ContentRow[] = [
         ...kws.map((k) => ({ ...k, _source: "keyword" as const })),
         ...gaps.map((k) => ({ ...k, _source: "gap" as const })),
       ].sort((a, b) => (b.opportunityScore ?? 0) - (a.opportunityScore ?? 0));
 
-      all = filterRowsBySite(all, getSelectedSite());
+      all = filterRowsBySite(all, siteSelection);
       setRows(all);
-    }).finally(() => setLoading(false));
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    setWorkflowMap(getOpportunityWorkflowMap());
+    loadData();
+
+    const unsubscribe = subscribeProjectScopeChange(() => {
+      loadData(getSelectedSite());
+    });
+    return () => unsubscribe();
+  }, [loadData]);
 
   const handleTagChange = useCallback(async (id: string, tag: Tag | undefined) => {
     const row = rows.find((r) => r.id === id);
@@ -41,6 +60,25 @@ export default function ContentPage() {
       await db.updateTag('keyword_gaps', id, tag);
     }
   }, [rows]);
+
+  const toggleWorkflowStatus = useCallback((opportunityId: string) => {
+    setWorkflowMap((prev) => {
+      const current = prev[opportunityId];
+      let next: OpportunityWorkflowStatus;
+
+      if (!current || current === 'New' || current === 'Ignored') {
+        next = 'Planned';
+      } else if (current === 'Planned') {
+        next = 'New';
+      } else {
+        return prev;
+      }
+
+      const newMap = { ...prev, [opportunityId]: next };
+      saveOpportunityWorkflowMap(newMap);
+      return newMap;
+    });
+  }, []);
 
   const displayRows = tab === 'all' ? rows : tab === 'tagged' ? rows.filter((r) => r.tag && r.tag !== 'Ignore') : rows.filter((r) => r._source === 'gap');
   const tagCounts = Object.fromEntries(['Money Page', 'Blog Post', 'City Page', 'Link Bait', 'Ignore'].map((t) => [t, rows.filter((r) => r.tag === t).length]));
@@ -118,6 +156,60 @@ export default function ContentPage() {
       ),
     },
     { key: 'opportunityScore', label: 'Score', sortKey: (r) => r.opportunityScore ?? 0, render: (r) => <ScoreBadge score={r.opportunityScore ?? 0} /> },
+    {
+      key: 'actionPlan',
+      label: 'Action Plan',
+      render: (r) => {
+        if (r._source !== 'gap') return <span style={{ color: 'var(--muted)' }}>-</span>;
+
+        const oppId = getKeywordGapOpportunityId(r as KeywordGapRecord);
+        const status = workflowMap[oppId] || 'New';
+
+        if (status === 'In Progress' || status === 'Done') {
+          return (
+            <span
+              style={{
+                fontSize: '0.72rem',
+                fontWeight: 600,
+                color: STATUS_COLORS[status].color,
+                background: STATUS_COLORS[status].bg,
+                padding: '0.15rem 0.4rem',
+                borderRadius: '4px',
+                border: `1px solid ${STATUS_COLORS[status].color}30`,
+                display: 'inline-block',
+                textAlign: 'center',
+                width: '90px'
+              }}
+            >
+              {status}
+            </span>
+          );
+        }
+
+        const isPlanned = status === 'Planned';
+        return (
+          <button
+            type="button"
+            onClick={() => toggleWorkflowStatus(oppId)}
+            style={{
+              fontSize: '0.72rem',
+              fontWeight: 600,
+              padding: '0.25rem 0.5rem',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              width: '90px',
+              textAlign: 'center',
+              transition: 'all 0.15s',
+              border: isPlanned ? '1px solid #38bdf8' : '1px solid var(--card-border)',
+              background: isPlanned ? 'rgba(56, 189, 248, 0.15)' : 'var(--card)',
+              color: isPlanned ? '#38bdf8' : 'var(--foreground)'
+            }}
+          >
+            {isPlanned ? 'Planned ✓' : 'Plan'}
+          </button>
+        );
+      }
+    },
   ];
 
   return (

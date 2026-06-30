@@ -9,16 +9,24 @@ import {
   getSelectedSite,
   siteSelectionLabel,
   siteSelectionSlug,
-  type SiteSelection
+  type SiteSelection,
+  subscribeProjectScopeChange
 } from '@/lib/storage';
 import type {
   KeywordRecord,
   BacklinkRecord,
   CompetitorPageRecord,
-  KeywordGapRecord
+  KeywordGapRecord,
+  UploadRecord,
+  ProjectRecord,
+  ReferringDomainRecord,
+  AnchorTextRecord,
+  DedupeReport
 } from '@/lib/types';
 import Card from '@/components/Card';
 import { buildOpportunityQueue } from '@/lib/opportunity-queue';
+import { calculateDataHealth } from '@/lib/data-health';
+import { convertHealthIssueToQueueItem } from '@/lib/health-action-items';
 import {
   WORKFLOW_STATUSES,
   STATUS_COLORS,
@@ -43,6 +51,9 @@ function getImpactText(type: string, impact: number): string {
   if (type === 'competitor') {
     return impact > 0 ? `Traffic: ${impact.toLocaleString()}` : 'Traffic: -';
   }
+  if (type === 'health') {
+    return impact === 3 ? 'Impact: Critical' : impact === 2 ? 'Impact: Warning' : 'Impact: Info';
+  }
   return '';
 }
 
@@ -51,13 +62,21 @@ export default function ActionPlanPage() {
   const [backlinks, setBacklinks] = useState<BacklinkRecord[]>([]);
   const [competitors, setCompetitors] = useState<CompetitorPageRecord[]>([]);
   const [gaps, setGaps] = useState<KeywordGapRecord[]>([]);
+
+  // Extra datasets needed for calculateDataHealth
+  const [uploads, setUploads] = useState<UploadRecord[]>([]);
+  const [projects, setProjects] = useState<ProjectRecord[]>([]);
+  const [referringDomains, setReferringDomains] = useState<ReferringDomainRecord[]>([]);
+  const [anchorTexts, setAnchorTexts] = useState<AnchorTextRecord[]>([]);
+  const [dedupeReports, setDedupeReports] = useState<DedupeReport[]>([]);
+
   const [selectedSite, setSelectedSiteState] = useState<SiteSelection>(null);
   const [loading, setLoading] = useState(true);
 
   const [workflowMap, setWorkflowMap] = useState<Record<string, OpportunityWorkflowStatus>>({});
   const [metadataMap, setMetadataMap] = useState<Record<string, ActionPlanItemMetadata>>({});
   const [statusFilter, setStatusFilter] = useState<'All' | 'Planned' | 'In Progress' | 'Done'>('All');
-  const [typeFilter, setTypeFilter] = useState<'all' | 'content' | 'gap' | 'backlink' | 'competitor'>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'content' | 'gap' | 'backlink' | 'competitor' | 'health'>('all');
   const [dueFilter, setDueFilter] = useState<'All' | 'Overdue' | 'This Week' | 'No Due Date'>('All');
   const [viewMode, setViewMode] = useState<'Board' | 'Table'>('Board');
 
@@ -85,12 +104,27 @@ export default function ActionPlanPage() {
       db.getBacklinks(),
       db.getCompetitorPages(),
       db.getKeywordGaps(),
-    ]).then(([kw, bl, cp, kg]) => {
-      setKeywords(kw);
-      setBacklinks(bl);
-      setCompetitors(cp);
-      setGaps(kg);
+      db.getUploads(),
+      db.getProjects(),
+      db.getReferringDomains(),
+      db.getAnchorTexts(),
+      db.getDedupeReports(),
+    ]).then(([kw, bl, cp, kg, u, p, rd, at, dr]) => {
+      setKeywords(kw || []);
+      setBacklinks(bl || []);
+      setCompetitors(cp || []);
+      setGaps(kg || []);
+      setUploads(u || []);
+      setProjects(p || []);
+      setReferringDomains(rd || []);
+      setAnchorTexts(at || []);
+      setDedupeReports(dr || []);
     }).finally(() => setLoading(false));
+
+    const unsubscribe = subscribeProjectScopeChange(() => {
+      setSelectedSiteState(getSelectedSite());
+    });
+    return () => unsubscribe();
   }, []);
 
   const handleViewModeChange = (newMode: 'Board' | 'Table') => {
@@ -129,9 +163,56 @@ export default function ActionPlanPage() {
   const scopedCompetitors = filterRowsBySite(competitors, selectedSite);
   const scopeLabel = siteSelectionLabel(selectedSite);
 
+  const selectedProjectId = useMemo(() => {
+    if (!selectedSite) return null;
+    const project = projects.find(
+      (p) =>
+        p.domain === selectedSite.domain &&
+        (p.location || '') === (selectedSite.location || '') &&
+        (p.niche || '') === (selectedSite.niche || '')
+    );
+    return project ? project.id : null;
+  }, [projects, selectedSite]);
+
+  const healthSummary = useMemo(() => {
+    if (loading) return null;
+    return calculateDataHealth(
+      uploads,
+      projects,
+      keywords,
+      gaps,
+      competitors,
+      backlinks,
+      referringDomains,
+      anchorTexts,
+      dedupeReports,
+      selectedProjectId
+    );
+  }, [
+    loading,
+    uploads,
+    projects,
+    keywords,
+    gaps,
+    competitors,
+    backlinks,
+    referringDomains,
+    anchorTexts,
+    dedupeReports,
+    selectedProjectId,
+  ]);
+
+  const healthQueueItems = useMemo(() => {
+    if (!healthSummary) return [];
+    return healthSummary.issues.map((issue) =>
+      convertHealthIssueToQueueItem(issue, selectedProjectId)
+    );
+  }, [healthSummary, selectedProjectId]);
+
   const queue = useMemo(() => {
-    return buildOpportunityQueue(scopedKeywords, scopedGaps, scopedBacklinks, scopedCompetitors);
-  }, [scopedKeywords, scopedGaps, scopedBacklinks, scopedCompetitors]);
+    const opps = buildOpportunityQueue(scopedKeywords, scopedGaps, scopedBacklinks, scopedCompetitors);
+    return [...opps, ...healthQueueItems];
+  }, [scopedKeywords, scopedGaps, scopedBacklinks, scopedCompetitors, healthQueueItems]);
 
   const enrichedQueue = useMemo(() => {
     return queue.map((item) => {
@@ -452,6 +533,7 @@ export default function ActionPlanPage() {
                   { id: 'gap', label: 'Keyword Gaps' },
                   { id: 'backlink', label: 'Backlinks' },
                   { id: 'competitor', label: 'Competitors' },
+                  { id: 'health', label: 'Data Health' },
                 ] as const
               ).map((tab) => {
                 const active = typeFilter === tab.id;
@@ -763,7 +845,7 @@ export default function ActionPlanPage() {
                               fontSize: '0.7rem',
                               fontWeight: 700,
                               textTransform: 'uppercase',
-                              color: item.type === 'content' ? 'var(--accent)' : item.type === 'gap' ? '#38bdf8' : item.type === 'backlink' ? 'var(--success)' : 'var(--warning)',
+                              color: item.type === 'content' ? 'var(--accent)' : item.type === 'gap' ? '#38bdf8' : item.type === 'backlink' ? 'var(--success)' : item.type === 'health' ? 'var(--danger)' : 'var(--warning)',
                             }}>
                               {item.type}
                             </span>
@@ -1128,7 +1210,7 @@ export default function ActionPlanPage() {
                           fontSize: '0.72rem',
                           fontWeight: 600,
                           textTransform: 'uppercase',
-                          color: item.type === 'content' ? 'var(--accent)' : item.type === 'gap' ? '#38bdf8' : item.type === 'backlink' ? 'var(--success)' : 'var(--warning)',
+                          color: item.type === 'content' ? 'var(--accent)' : item.type === 'gap' ? '#38bdf8' : item.type === 'backlink' ? 'var(--success)' : item.type === 'health' ? 'var(--danger)' : 'var(--warning)',
                         }}>
                           {item.type}
                         </span>

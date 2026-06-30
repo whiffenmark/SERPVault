@@ -6,6 +6,7 @@ import * as db from '@/lib/db';
 import {
   getSelectedProjectId,
   getSelectedProject,
+  subscribeProjectScopeChange,
 } from '@/lib/storage';
 import {
   calculateDataHealth,
@@ -13,6 +14,12 @@ import {
   type HealthIssue,
   type ReportStatus,
 } from '@/lib/data-health';
+import {
+  getOpportunityWorkflowMap,
+  saveOpportunityWorkflowMap,
+  type OpportunityWorkflowStatus,
+} from '@/lib/opportunity-workflow';
+import { getHealthIssueStableId } from '@/lib/health-action-items';
 import Card from '@/components/Card';
 import type {
   UploadRecord,
@@ -55,6 +62,7 @@ export default function DataHealthPage() {
 
   const [selectedProjectId, setSelectedProjectIdState] = useState<string | null>(null);
   const [selectedProjectRecord, setSelectedProjectRecord] = useState<ProjectRecord | null>(null);
+  const [workflowMap, setWorkflowMap] = useState<Record<string, OpportunityWorkflowStatus>>({});
   const [loading, setLoading] = useState(true);
 
   const loadData = async () => {
@@ -84,6 +92,7 @@ export default function DataHealthPage() {
 
       setSelectedProjectIdState(getSelectedProjectId());
       setSelectedProjectRecord(getSelectedProject());
+      setWorkflowMap(getOpportunityWorkflowMap());
     } catch (err) {
       console.error('[Data Health] Error loading database reports:', err);
     } finally {
@@ -91,16 +100,32 @@ export default function DataHealthPage() {
     }
   };
 
+  const toggleHealthIssueInPlan = (issueId: string) => {
+    const stableId = getHealthIssueStableId(issueId, selectedProjectId);
+    const currentStatus = workflowMap[stableId];
+    let newStatus: OpportunityWorkflowStatus;
+
+    if (currentStatus === 'Planned') {
+      newStatus = 'New';
+    } else if (currentStatus === 'In Progress' || currentStatus === 'Done') {
+      return;
+    } else {
+      newStatus = 'Planned';
+    }
+
+    const updated = { ...workflowMap, [stableId]: newStatus };
+    setWorkflowMap(updated);
+    saveOpportunityWorkflowMap(updated);
+  };
+
   useEffect(() => {
     loadData();
 
-    // Listen to changes in project selection if any
-    const handleStorageChange = () => {
-      setSelectedProjectIdState(getSelectedProjectId());
+    const unsubscribe = subscribeProjectScopeChange((projectId) => {
+      setSelectedProjectIdState(projectId);
       setSelectedProjectRecord(getSelectedProject());
-    };
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
+    });
+    return () => unsubscribe();
   }, []);
 
   const health = useMemo<HealthSummary>(() => {
@@ -403,6 +428,34 @@ export default function DataHealthPage() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                 {health.issues.map((issue) => {
                   const style = getSeverityStyle(issue.severity);
+                  const stableId = getHealthIssueStableId(issue.id, selectedProjectId);
+                  const currentStatus = workflowMap[stableId] || 'New';
+
+                  let btnLabel = 'Add to Plan';
+                  let btnBg = 'rgba(99, 102, 241, 0.08)';
+                  let btnColor = 'var(--accent)';
+                  let btnBorder = '1px solid var(--accent)';
+                  let isBtnDisabled = false;
+
+                  if (currentStatus === 'Planned') {
+                    btnLabel = '✓ In Plan';
+                    btnBg = 'rgba(56, 189, 248, 0.12)';
+                    btnColor = '#38bdf8';
+                    btnBorder = '1px solid #38bdf8';
+                  } else if (currentStatus === 'In Progress') {
+                    btnLabel = 'In Progress';
+                    btnBg = 'rgba(245, 158, 11, 0.12)';
+                    btnColor = 'var(--warning)';
+                    btnBorder = '1px solid var(--warning)';
+                    isBtnDisabled = true;
+                  } else if (currentStatus === 'Done') {
+                    btnLabel = 'Done';
+                    btnBg = 'rgba(16, 185, 129, 0.12)';
+                    btnColor = 'var(--success)';
+                    btnBorder = '1px solid var(--success)';
+                    isBtnDisabled = true;
+                  }
+
                   return (
                     <div
                       key={issue.id}
@@ -446,21 +499,52 @@ export default function DataHealthPage() {
                         {issue.description}
                       </p>
 
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.68rem', color: 'var(--muted)' }}>
-                        <span style={{ textTransform: 'capitalize' }}>Category: {issue.category}</span>
-                        {issue.category === 'volume' || issue.category === 'coverage' ? (
-                          <Link href="/upload" style={{ color: 'var(--accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '2px', fontWeight: 500 }}>
-                            Upload CSV <ArrowRight size={10} />
-                          </Link>
-                        ) : issue.category === 'dedupe' ? (
-                          <Link href="/dedupe" style={{ color: 'var(--accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '2px', fontWeight: 500 }}>
-                            Clean Database <ArrowRight size={10} />
-                          </Link>
-                        ) : issue.category === 'assignment' ? (
-                          <Link href="/uploads" style={{ color: 'var(--accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '2px', fontWeight: 500 }}>
-                            Manage Scope <ArrowRight size={10} />
-                          </Link>
-                        ) : null}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.68rem', color: 'var(--muted)', marginTop: '0.5rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <span style={{ textTransform: 'capitalize' }}>Category: {issue.category}</span>
+                          {issue.category === 'volume' || issue.category === 'coverage' ? (
+                            <>
+                              <span style={{ color: 'var(--card-border)', margin: '0 0.25rem' }}>|</span>
+                              <Link href="/upload" style={{ color: 'var(--accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '2px', fontWeight: 500 }}>
+                                Upload CSV <ArrowRight size={10} />
+                              </Link>
+                            </>
+                          ) : issue.category === 'dedupe' ? (
+                            <>
+                              <span style={{ color: 'var(--card-border)', margin: '0 0.25rem' }}>|</span>
+                              <Link href="/dedupe" style={{ color: 'var(--accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '2px', fontWeight: 500 }}>
+                                Clean Database <ArrowRight size={10} />
+                              </Link>
+                            </>
+                          ) : issue.category === 'assignment' ? (
+                            <>
+                              <span style={{ color: 'var(--card-border)', margin: '0 0.25rem' }}>|</span>
+                              <Link href="/uploads" style={{ color: 'var(--accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '2px', fontWeight: 500 }}>
+                                Manage Scope <ArrowRight size={10} />
+                              </Link>
+                            </>
+                          ) : null}
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={isBtnDisabled}
+                          onClick={() => toggleHealthIssueInPlan(issue.id)}
+                          style={{
+                            padding: '0.2rem 0.5rem',
+                            borderRadius: '4px',
+                            background: btnBg,
+                            color: btnColor,
+                            border: btnBorder,
+                            fontSize: '0.65rem',
+                            fontWeight: 600,
+                            cursor: isBtnDisabled ? 'default' : 'pointer',
+                            transition: 'all 0.15s ease',
+                            outline: 'none',
+                          }}
+                        >
+                          {btnLabel}
+                        </button>
                       </div>
                     </div>
                   );
