@@ -33,6 +33,19 @@ import {
   type ActionPlanItemMetadata
 } from '@/lib/action-plan-metadata';
 
+function getImpactText(type: string, impact: number): string {
+  if (type === 'content' || type === 'gap') {
+    return impact > 0 ? `Monthly Vol: ${impact.toLocaleString()}` : 'Monthly Vol: -';
+  }
+  if (type === 'backlink') {
+    return `DA: ${impact}`;
+  }
+  if (type === 'competitor') {
+    return impact > 0 ? `Traffic: ${impact.toLocaleString()}` : 'Traffic: -';
+  }
+  return '';
+}
+
 export default function ActionPlanPage() {
   const [keywords, setKeywords] = useState<KeywordRecord[]>([]);
   const [backlinks, setBacklinks] = useState<BacklinkRecord[]>([]);
@@ -46,6 +59,7 @@ export default function ActionPlanPage() {
   const [statusFilter, setStatusFilter] = useState<'All' | 'Planned' | 'In Progress' | 'Done'>('All');
   const [typeFilter, setTypeFilter] = useState<'all' | 'content' | 'gap' | 'backlink' | 'competitor'>('all');
   const [dueFilter, setDueFilter] = useState<'All' | 'Overdue' | 'This Week' | 'No Due Date'>('All');
+  const [viewMode, setViewMode] = useState<'Board' | 'Table'>('Board');
 
   useEffect(() => {
     setSelectedSiteState(getSelectedSite());
@@ -55,6 +69,16 @@ export default function ActionPlanPage() {
 
     const meta = getActionPlanMetadataMap();
     setMetadataMap(meta);
+
+    let savedView: string | null = null;
+    try {
+      savedView = localStorage.getItem('serpvault_action_plan_view');
+    } catch (e) {
+      console.warn('localStorage is not available for reading:', e);
+    }
+    if (savedView === 'Board' || savedView === 'Table') {
+      setViewMode(savedView);
+    }
 
     Promise.all([
       db.getKeywords(),
@@ -68,6 +92,15 @@ export default function ActionPlanPage() {
       setGaps(kg);
     }).finally(() => setLoading(false));
   }, []);
+
+  const handleViewModeChange = (newMode: 'Board' | 'Table') => {
+    setViewMode(newMode);
+    try {
+      localStorage.setItem('serpvault_action_plan_view', newMode);
+    } catch (e) {
+      console.warn('localStorage is not available for writing:', e);
+    }
+  };
 
   const handleStatusChange = (id: string, newStatus: OpportunityWorkflowStatus) => {
     const updated = { ...workflowMap, [id]: newStatus };
@@ -256,6 +289,7 @@ export default function ActionPlanPage() {
         </div>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <button
+            type="button"
             onClick={handleExportCSV}
             style={{
               display: 'inline-flex',
@@ -283,6 +317,7 @@ export default function ActionPlanPage() {
             <FileDown size={14} /> Export CSV
           </button>
           <button
+            type="button"
             onClick={handleExportMD}
             style={{
               display: 'inline-flex',
@@ -380,6 +415,7 @@ export default function ActionPlanPage() {
                 return (
                   <button
                     key={statusOption.id}
+                    type="button"
                     onClick={() => setStatusFilter(statusOption.id)}
                     style={{
                       padding: '0.3rem 0.7rem',
@@ -422,6 +458,7 @@ export default function ActionPlanPage() {
                 return (
                   <button
                     key={tab.id}
+                    type="button"
                     onClick={() => setTypeFilter(tab.id)}
                     style={{
                       padding: '0.3rem 0.7rem',
@@ -450,56 +487,87 @@ export default function ActionPlanPage() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.75rem', color: 'var(--muted)', marginRight: '0.35rem', fontWeight: 500 }}>Due Date:</span>
-            {(
-              [
-                { id: 'All', label: 'All Due' },
-                { id: 'Overdue', label: 'Overdue' },
-                { id: 'This Week', label: 'This Week' },
-                { id: 'No Due Date', label: 'No Due Date' },
-              ] as const
-            ).map((dueOption) => {
-              const active = dueFilter === dueOption.id;
-              let activeBorder = 'var(--accent)';
-              let activeBg = 'var(--accent)';
-              let activeColor = '#fff';
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+            <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--muted)', marginRight: '0.35rem', fontWeight: 500 }}>Due Date:</span>
+              {(
+                [
+                  { id: 'All', label: 'All Due' },
+                  { id: 'Overdue', label: 'Overdue' },
+                  { id: 'This Week', label: 'This Week' },
+                  { id: 'No Due Date', label: 'No Due Date' },
+                ] as const
+              ).map((dueOption) => {
+                const active = dueFilter === dueOption.id;
+                let activeBorder = 'var(--accent)';
+                let activeBg = 'var(--accent)';
+                let activeColor = '#fff';
 
-              if (active) {
-                if (dueOption.id === 'Overdue') { activeBg = 'rgba(239, 68, 68, 0.12)'; activeColor = 'var(--danger)'; activeBorder = 'var(--danger)'; }
-                else if (dueOption.id === 'This Week') { activeBg = 'rgba(99, 102, 241, 0.12)'; activeColor = 'var(--accent)'; activeBorder = 'var(--accent)'; }
-                else if (dueOption.id === 'No Due Date') { activeBg = 'rgba(100, 116, 139, 0.12)'; activeColor = 'var(--muted)'; activeBorder = 'var(--muted)'; }
-                else { activeBg = 'rgba(255,255,255,0.08)'; activeColor = 'var(--foreground)'; activeBorder = 'var(--card-border)'; }
-              }
+                if (active) {
+                  if (dueOption.id === 'Overdue') { activeBg = 'rgba(239, 68, 68, 0.12)'; activeColor = 'var(--danger)'; activeBorder = 'var(--danger)'; }
+                  else if (dueOption.id === 'This Week') { activeBg = 'rgba(99, 102, 241, 0.12)'; activeColor = 'var(--accent)'; activeBorder = 'var(--accent)'; }
+                  else if (dueOption.id === 'No Due Date') { activeBg = 'rgba(100, 116, 139, 0.12)'; activeColor = 'var(--muted)'; activeBorder = 'var(--muted)'; }
+                  else { activeBg = 'rgba(255,255,255,0.08)'; activeColor = 'var(--foreground)'; activeBorder = 'var(--card-border)'; }
+                }
 
-              return (
-                <button
-                  key={dueOption.id}
-                  onClick={() => setDueFilter(dueOption.id)}
-                  style={{
-                    padding: '0.3rem 0.7rem',
-                    borderRadius: '15px',
-                    border: '1px solid',
-                    borderColor: active ? activeBorder : 'var(--card-border)',
-                    background: active ? activeBg : 'transparent',
-                    color: active ? activeColor : 'var(--muted)',
-                    fontSize: '0.72rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                    outline: 'none',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!active) e.currentTarget.style.borderColor = 'var(--accent)';
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!active) e.currentTarget.style.borderColor = 'var(--card-border)';
-                  }}
-                >
-                  {dueOption.label}
-                </button>
-              );
-            })}
+                return (
+                  <button
+                    key={dueOption.id}
+                    type="button"
+                    onClick={() => setDueFilter(dueOption.id)}
+                    style={{
+                      padding: '0.3rem 0.7rem',
+                      borderRadius: '15px',
+                      border: '1px solid',
+                      borderColor: active ? activeBorder : 'var(--card-border)',
+                      background: active ? activeBg : 'transparent',
+                      color: active ? activeColor : 'var(--muted)',
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      outline: 'none',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!active) e.currentTarget.style.borderColor = 'var(--accent)';
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!active) e.currentTarget.style.borderColor = 'var(--card-border)';
+                    }}
+                  >
+                    {dueOption.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* View Toggle */}
+            <div style={{ display: 'flex', gap: '0.2rem', alignItems: 'center', background: 'rgba(255,255,255,0.03)', borderRadius: '6px', padding: '0.15rem', border: '1px solid var(--card-border)' }}>
+              {(['Board', 'Table'] as const).map((mode) => {
+                const active = viewMode === mode;
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => handleViewModeChange(mode)}
+                    style={{
+                      padding: '0.25rem 0.6rem',
+                      borderRadius: '4px',
+                      border: 'none',
+                      background: active ? 'var(--accent)' : 'transparent',
+                      color: active ? '#fff' : 'var(--muted)',
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      outline: 'none',
+                    }}
+                  >
+                    {mode}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 
@@ -524,6 +592,7 @@ export default function ActionPlanPage() {
               Your current filters (Type: <strong>{typeFilter}</strong>, Status: <strong>{statusFilter}</strong>, Due: <strong>{dueFilter}</strong>) did not match any plan items.
             </p>
             <button
+              type="button"
               onClick={() => {
                 setTypeFilter('all');
                 setStatusFilter('All');
@@ -543,6 +612,448 @@ export default function ActionPlanPage() {
             >
               Reset Filters
             </button>
+          </div>
+        ) : viewMode === 'Board' ? (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+            gap: '1.25rem',
+            alignItems: 'start',
+          }}>
+            {(['Planned', 'In Progress', 'Done'] as const).map((status) => {
+              const columnItems = filteredPlan.filter((item) => item.status === status);
+              const count = columnItems.length;
+              const columnImpact = columnItems.reduce((sum, item) => sum + (item.impact || 0), 0);
+
+              let statusColor = '#38bdf8';
+              if (status === 'In Progress') statusColor = 'var(--warning)';
+              else if (status === 'Done') statusColor = 'var(--success)';
+
+              return (
+                <div
+                  key={status}
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.01)',
+                    borderRadius: '8px',
+                    border: '1px solid var(--card-border)',
+                    padding: '0.75rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.75rem',
+                    minHeight: '400px',
+                  }}
+                >
+                  {/* Column Header */}
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    paddingBottom: '0.5rem',
+                    borderBottom: '1px solid var(--card-border)',
+                    marginBottom: '0.25rem'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <span style={{
+                        width: '8px',
+                        height: '8px',
+                        borderRadius: '50%',
+                        backgroundColor: statusColor,
+                      }} />
+                      <span style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--foreground)' }}>{status}</span>
+                      <span style={{
+                        fontSize: '0.7rem',
+                        background: 'rgba(255,255,255,0.06)',
+                        padding: '0.05rem 0.35rem',
+                        borderRadius: '10px',
+                        color: 'var(--muted)',
+                        fontWeight: 600
+                      }}>{count}</span>
+                    </div>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--muted)' }}>
+                      Impact: <span style={{ fontWeight: 600, color: 'var(--foreground)' }}>{columnImpact.toLocaleString()}</span>
+                    </div>
+                  </div>
+
+                  {/* Column Items */}
+                  {columnItems.length === 0 ? (
+                    <div style={{
+                      padding: '2rem 1rem',
+                      textAlign: 'center',
+                      color: 'var(--muted)',
+                      fontSize: '0.75rem',
+                      border: '1px dashed rgba(255,255,255,0.03)',
+                      borderRadius: '6px',
+                      background: 'rgba(0,0,0,0.05)'
+                    }}>
+                      No {status.toLowerCase()} items
+                    </div>
+                  ) : (
+                    columnItems.map((item) => {
+                      let prioLabel = 'Low';
+                      let prioColor = 'var(--muted)';
+                      let prioBg = 'rgba(100, 116, 139, 0.1)';
+
+                      if (item.score >= 70) {
+                        prioLabel = 'High';
+                        prioColor = 'var(--success)';
+                        prioBg = 'rgba(16, 185, 129, 0.12)';
+                      } else if (item.score >= 40) {
+                        prioLabel = 'Medium';
+                        prioColor = 'var(--warning)';
+                        prioBg = 'rgba(245, 158, 11, 0.12)';
+                      }
+
+                      const impactText = getImpactText(item.type, item.impact);
+
+                      const overdue = isOverdue(item.dueDate, item.status);
+                      const thisWeek = isThisWeek(item.dueDate);
+                      let dateColor = 'var(--foreground)';
+                      let dateBorder = 'var(--card-border)';
+                      let dateBg = 'rgba(255, 255, 255, 0.02)';
+                      if (overdue) {
+                        dateColor = 'var(--danger)';
+                        dateBorder = 'rgba(239, 68, 68, 0.4)';
+                        dateBg = 'rgba(239, 68, 68, 0.05)';
+                      } else if (thisWeek) {
+                        dateColor = 'var(--warning)';
+                        dateBorder = 'rgba(245, 158, 11, 0.4)';
+                        dateBg = 'rgba(245, 158, 11, 0.05)';
+                      }
+
+                      return (
+                        <div
+                          key={item.id}
+                          style={{
+                            background: 'var(--card)',
+                            border: '1px solid var(--card-border)',
+                            borderRadius: '8px',
+                            padding: '0.75rem',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.6rem',
+                            transition: 'border-color 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = 'var(--card-border)';
+                          }}
+                        >
+                          {/* Priority, Score, Type and Impact */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                padding: '0.15rem 0.4rem',
+                                borderRadius: '4px',
+                                fontSize: '0.7rem',
+                                fontWeight: 600,
+                                color: prioColor,
+                                background: prioBg,
+                              }}>
+                                {prioLabel} <span style={{ opacity: 0.8, marginLeft: '0.2rem', fontWeight: 400 }}>({item.score})</span>
+                              </span>
+                              <span style={{ fontSize: '0.7rem', fontWeight: 500, color: 'var(--muted)' }}>
+                                {impactText}
+                              </span>
+                            </div>
+                            <span style={{
+                              fontSize: '0.7rem',
+                              fontWeight: 700,
+                              textTransform: 'uppercase',
+                              color: item.type === 'content' ? 'var(--accent)' : item.type === 'gap' ? '#38bdf8' : item.type === 'backlink' ? 'var(--success)' : 'var(--warning)',
+                            }}>
+                              {item.type}
+                            </span>
+                          </div>
+
+                          {/* Title & Detail */}
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: '0.82rem', marginBottom: '0.15rem', color: 'var(--foreground)', lineHeight: '1.3' }} title={item.title}>
+                              {item.title}
+                            </div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--muted)', display: 'flex', gap: '0.35rem', flexWrap: 'wrap', alignItems: 'center', marginTop: '0.2rem' }}>
+                              <span style={{
+                                display: 'inline-block',
+                                fontSize: '0.68rem',
+                                color: 'var(--muted)',
+                                border: '1px solid var(--card-border)',
+                                borderRadius: '3px',
+                                padding: '0.05rem 0.25rem',
+                                background: 'rgba(255,255,255,0.01)',
+                                maxWidth: '120px',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap'
+                              }} title={item.sourceLabel}>
+                                {item.sourceLabel}
+                              </span>
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '160px' }} title={item.detail}>
+                                {item.detail}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Recommended Action */}
+                          <div style={{
+                            fontSize: '0.75rem',
+                            color: 'var(--foreground)',
+                            opacity: 0.9,
+                            borderLeft: '2px solid var(--card-border)',
+                            paddingLeft: '0.5rem',
+                            margin: '0.2rem 0',
+                            lineHeight: '1.3'
+                          }}>
+                            {item.recommendedAction}
+                          </div>
+
+                          {/* Owner & Due Date Fields */}
+                          <div style={{ display: 'flex', gap: '0.5rem', flexDirection: 'column' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                              <span style={{ fontSize: '0.7rem', color: 'var(--muted)', width: '40px' }}>Owner:</span>
+                              <input
+                                type="text"
+                                placeholder="Assign..."
+                                value={item.owner || ''}
+                                onChange={(e) => handleMetadataChange(item.id, { owner: e.target.value })}
+                                style={{
+                                  flex: 1,
+                                  padding: '0.2rem 0.35rem',
+                                  borderRadius: '4px',
+                                  border: '1px solid var(--card-border)',
+                                  background: 'rgba(255, 255, 255, 0.02)',
+                                  color: 'var(--foreground)',
+                                  fontSize: '0.75rem',
+                                  outline: 'none',
+                                }}
+                                onFocus={(e) => {
+                                  e.currentTarget.style.borderColor = 'var(--accent)';
+                                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)';
+                                }}
+                                onBlur={(e) => {
+                                  e.currentTarget.style.borderColor = 'var(--card-border)';
+                                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.02)';
+                                }}
+                              />
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                              <span style={{ fontSize: '0.7rem', color: 'var(--muted)', width: '40px' }}>Due:</span>
+                              <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                <input
+                                  type="date"
+                                  value={item.dueDate || ''}
+                                  onChange={(e) => handleMetadataChange(item.id, { dueDate: e.target.value })}
+                                  style={{
+                                    flex: 1,
+                                    padding: '0.2rem 0.35rem',
+                                    borderRadius: '4px',
+                                    border: `1px solid ${dateBorder}`,
+                                    background: dateBg,
+                                    color: dateColor,
+                                    fontSize: '0.75rem',
+                                    outline: 'none',
+                                    cursor: 'pointer',
+                                    colorScheme: 'inherit',
+                                  }}
+                                  onFocus={(e) => {
+                                    e.currentTarget.style.borderColor = 'var(--accent)';
+                                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)';
+                                  }}
+                                  onBlur={(e) => {
+                                    e.currentTarget.style.borderColor = dateBorder;
+                                    e.currentTarget.style.backgroundColor = dateBg;
+                                  }}
+                                />
+                                {overdue && (
+                                  <span style={{ fontSize: '0.65rem', color: 'var(--danger)', fontWeight: 600 }}>Overdue</span>
+                                )}
+                                {thisWeek && !overdue && (
+                                  <span style={{ fontSize: '0.65rem', color: 'var(--warning)', fontWeight: 600 }}>This Week</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Notes Preview */}
+                          <div>
+                            <textarea
+                              rows={1}
+                              placeholder="Notes..."
+                              value={item.notes || ''}
+                              onChange={(e) => handleMetadataChange(item.id, { notes: e.target.value })}
+                              style={{
+                                width: '100%',
+                                padding: '0.2rem 0.35rem',
+                                borderRadius: '4px',
+                                border: '1px solid var(--card-border)',
+                                background: 'rgba(255, 255, 255, 0.02)',
+                                color: 'var(--foreground)',
+                                fontSize: '0.75rem',
+                                outline: 'none',
+                                resize: 'vertical',
+                                minHeight: '26px',
+                                lineHeight: '1.2',
+                                colorScheme: 'inherit',
+                              }}
+                              onFocus={(e) => {
+                                e.currentTarget.style.borderColor = 'var(--accent)';
+                                e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)';
+                              }}
+                              onBlur={(e) => {
+                                e.currentTarget.style.borderColor = 'var(--card-border)';
+                                e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.02)';
+                              }}
+                            />
+                          </div>
+
+                          {/* Card Footer: View and Quick Move */}
+                          <div style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            marginTop: '0.4rem',
+                            borderTop: '1px solid var(--card-border)',
+                            paddingTop: '0.5rem'
+                          }}>
+                            <Link
+                              href={item.href || '#'}
+                              style={{
+                                display: 'inline-block',
+                                color: 'var(--accent)',
+                                textDecoration: 'none',
+                                fontWeight: 600,
+                                fontSize: '0.72rem',
+                                padding: '0.2rem 0.4rem',
+                                borderRadius: '4px',
+                                background: 'rgba(99, 102, 241, 0.08)',
+                                transition: 'background 0.2s',
+                              }}
+                            >
+                              View →
+                            </Link>
+                            <div style={{ display: 'flex', gap: '0.25rem' }}>
+                              {/* Move Left Button */}
+                              {status === 'In Progress' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleStatusChange(item.id, 'Planned')}
+                                  style={{
+                                    padding: '0.2rem 0.4rem',
+                                    borderRadius: '4px',
+                                    border: '1px solid var(--card-border)',
+                                    background: 'rgba(255, 255, 255, 0.03)',
+                                    color: 'var(--muted)',
+                                    fontSize: '0.7rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s ease',
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                                    e.currentTarget.style.borderColor = 'var(--accent)';
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
+                                    e.currentTarget.style.borderColor = 'var(--card-border)';
+                                  }}
+                                >
+                                  ← Plan
+                                </button>
+                              )}
+                              {status === 'Done' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleStatusChange(item.id, 'In Progress')}
+                                  style={{
+                                    padding: '0.2rem 0.4rem',
+                                    borderRadius: '4px',
+                                    border: '1px solid var(--card-border)',
+                                    background: 'rgba(255, 255, 255, 0.03)',
+                                    color: 'var(--muted)',
+                                    fontSize: '0.7rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s ease',
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                                    e.currentTarget.style.borderColor = 'var(--accent)';
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
+                                    e.currentTarget.style.borderColor = 'var(--card-border)';
+                                  }}
+                                >
+                                  ← Reopen
+                                </button>
+                              )}
+
+                              {/* Move Right Button */}
+                              {status === 'Planned' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleStatusChange(item.id, 'In Progress')}
+                                  style={{
+                                    padding: '0.2rem 0.4rem',
+                                    borderRadius: '4px',
+                                    border: '1px solid var(--card-border)',
+                                    background: 'rgba(255, 255, 255, 0.03)',
+                                    color: 'var(--muted)',
+                                    fontSize: '0.7rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s ease',
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                                    e.currentTarget.style.borderColor = 'var(--accent)';
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
+                                    e.currentTarget.style.borderColor = 'var(--card-border)';
+                                  }}
+                                >
+                                  Start →
+                                </button>
+                              )}
+                              {status === 'In Progress' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleStatusChange(item.id, 'Done')}
+                                  style={{
+                                    padding: '0.2rem 0.4rem',
+                                    borderRadius: '4px',
+                                    border: '1px solid var(--card-border)',
+                                    background: 'rgba(255, 255, 255, 0.03)',
+                                    color: 'var(--muted)',
+                                    fontSize: '0.7rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s ease',
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                                    e.currentTarget.style.borderColor = 'var(--accent)';
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
+                                    e.currentTarget.style.borderColor = 'var(--card-border)';
+                                  }}
+                                >
+                                  Done ✓
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              );
+            })}
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
@@ -578,14 +1089,7 @@ export default function ActionPlanPage() {
                     prioBg = 'rgba(245, 158, 11, 0.12)';
                   }
 
-                  let impactText = '';
-                  if (item.type === 'content' || item.type === 'gap') {
-                    impactText = item.impact > 0 ? `Vol: ${item.impact.toLocaleString()}` : 'Vol: -';
-                  } else if (item.type === 'backlink') {
-                    impactText = `DA: ${item.impact}`;
-                  } else if (item.type === 'competitor') {
-                    impactText = item.impact > 0 ? `Traffic: ${item.impact.toLocaleString()}` : 'Traffic: -';
-                  }
+                  const impactText = getImpactText(item.type, item.impact);
 
                   const statusColor = STATUS_COLORS[item.status] || { color: 'var(--foreground)', bg: 'rgba(255,255,255,0.05)' };
 

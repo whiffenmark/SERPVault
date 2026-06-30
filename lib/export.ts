@@ -1,6 +1,10 @@
 import type { KeywordRecord, BacklinkRecord, CompetitorPageRecord } from './types';
 import type { OpportunityQueueItem } from './opportunity-queue';
 import type { OpportunityWorkflowStatus } from './opportunity-workflow';
+import type { ContentBrief } from './content-briefs';
+import { generateContentBriefMarkdown } from './content-briefs';
+import type { CompetitorSummary } from './competitive-intelligence';
+import type { SiteSelection } from './storage';
 
 
 function toCSV(rows: Record<string, unknown>[]): string {
@@ -37,7 +41,7 @@ function scopedFilename(base: string, extension: string, scopeSlug?: string): st
 export function exportKeywordsCSV(rows: KeywordRecord[], scopeSlug?: string): void {
   const data = rows.map((r) => ({
     Keyword: r.keyword,
-    'Monthly Volume': r.volume ?? '',
+    'Monthly Search Volume': r.volume ?? '',
     Difficulty: r.difficulty ?? '',
     CPC: r.cpc ?? '',
     Intent: r.intent ?? '',
@@ -65,7 +69,7 @@ export function exportContentPlanCSV(rows: KeywordRecord[], scopeSlug?: string):
   const data = tagged.map((r) => ({
     Keyword: r.keyword,
     'Content Type': r.tag ?? '',
-    'Monthly Volume': r.volume ?? '',
+    'Monthly Search Volume': r.volume ?? '',
     Difficulty: r.difficulty ?? '',
     Intent: r.intent ?? '',
     'Opportunity Score': r.opportunityScore ?? '',
@@ -111,8 +115,8 @@ export function exportActionPlanMD(
     '',
     '## Top Keyword Opportunities',
     '',
-    '| Keyword | Monthly Volume | Difficulty | Intent | Tag | Score |',
-    '|---------|--------|------------|--------|-----|-------|',
+    '| Keyword | Monthly Search Volume | Difficulty | Intent | Tag | Score |',
+    '|---------|-----------------------|------------|--------|-----|-------|',
     ...topKw.map(
       (r) =>
         `| ${r.keyword} | ${r.volume ?? '-'} | ${r.difficulty ?? '-'} | ${r.intent ?? '-'} | ${r.tag ?? '-'} | ${r.opportunityScore ?? '-'} |`
@@ -230,7 +234,7 @@ export function exportHermesContentPlanMD(rows: KeywordRecord[], scopeLabel = 'A
       lines.push('');
       lines.push('**Keywords:**');
       for (const k of keywords) {
-        const vol = k.volume != null ? ` (${k.volume.toLocaleString()})` : '';
+        const vol = k.volume != null ? ` (Monthly Search Volume: ${k.volume.toLocaleString()})` : '';
         lines.push(`- ${k.keyword}${vol}`);
       }
       lines.push('');
@@ -298,4 +302,163 @@ export function exportWorkflowActionPlanMD(
   ];
 
   download(lines.join('\n'), scopedFilename('serpvault-workflow-action-plan', 'md', scopeSlug), 'text/markdown');
+}
+
+export function exportContentBriefPackMD(
+  briefs: ContentBrief[],
+  scopeLabel = 'All Projects',
+  scopeSlug?: string
+): void {
+  const date = new Date().toLocaleDateString();
+  const lines: string[] = [
+    `# Content Brief Pack — ${date}`,
+    '',
+    `**Export Scope:** ${scopeLabel}`,
+    `**Total Briefs:** ${briefs.length}`,
+    '',
+    '## Table of Contents',
+    '',
+  ];
+
+  if (briefs.length === 0) {
+    lines.push('_No content briefs available to export. Ensure keywords or content opportunities are tagged first._');
+  } else {
+    briefs.forEach((brief, idx) => {
+      lines.push(`${idx + 1}. [${brief.title}](#brief-${brief.id}) (${brief.suggestedContentType} | Monthly Search Volume: ${brief.monthlyVolumeTotal?.toLocaleString() ?? 0} | Difficulty: ${brief.avgDifficulty}/100)`);
+    });
+
+    lines.push('', '---', '');
+
+    briefs.forEach((brief, idx) => {
+      lines.push(`<a name="brief-${brief.id}"></a>`);
+      lines.push(generateContentBriefMarkdown(brief));
+      if (idx < briefs.length - 1) {
+        lines.push('', '---', '');
+      }
+    });
+  }
+
+  download(lines.join('\n'), scopedFilename('serpvault-content-brief-pack', 'md', scopeSlug), 'text/markdown');
+}
+
+export function exportCompetitiveIntelMD(
+  summaries: CompetitorSummary[],
+  scopeLabel = 'All Projects',
+  scopeSlug?: string
+): void {
+  const date = new Date().toLocaleDateString();
+  const sorted = [...summaries].sort((a, b) => b.opportunityScore - a.opportunityScore);
+
+  const lines: string[] = [
+    `# SERPVault Competitive Intelligence Report — ${date}`,
+    '',
+    `**Export Scope:** ${scopeLabel}`,
+    `**Total Competitor Domains Analyzed:** ${summaries.length}`,
+    '',
+    '## Competitor Domain Summaries',
+    '',
+    '| Competitor Domain | Est. Monthly Traffic | Pages Indexed | Content Gaps | Backlink Prospects | Referring Domains | Top Page | Configured? | Opportunity Score |',
+    '|-------------------|----------------------|---------------|--------------|-------------------|-------------------|----------|-------------|-------------------|',
+    ...sorted.map((s) => {
+      const topPage = s.topPageUrl ? `[${s.topPageTitle || s.topPageUrl}](${s.topPageUrl})` : '-';
+      const isConfig = s.isConfigured ? 'Yes' : 'No';
+      return `| ${s.domain} | ${s.estTraffic?.toLocaleString() ?? 0} | ${s.pageCount} | ${s.gapKeywordCount} | ${s.backlinkProspectCount} | ${s.referringDomainCount} | ${topPage} | ${isConfig} | ${s.opportunityScore} / 100 |`;
+    }),
+  ];
+
+  download(lines.join('\n'), scopedFilename('serpvault-competitive-intelligence', 'md', scopeSlug), 'text/markdown');
+}
+
+export interface ExecutiveReportParams {
+  scopeLabel: string;
+  scopeSlug?: string;
+  selectedSite: SiteSelection;
+  counts: {
+    keywords: number;
+    gaps: number;
+    backlinks: number;
+    pages: number;
+    domains: number;
+  };
+  workflowCounts: {
+    planned: number;
+    inProgress: number;
+    done: number;
+  };
+  topOpportunities: OpportunityQueueItem[];
+  topBriefs: ContentBrief[];
+  topCompetitors: CompetitorSummary[];
+}
+
+export function exportExecutiveStrategyReportMD(
+  params: ExecutiveReportParams
+): void {
+  const date = new Date().toLocaleDateString();
+  const {
+    scopeLabel,
+    scopeSlug,
+    selectedSite,
+    counts,
+    workflowCounts,
+    topOpportunities,
+    topBriefs,
+    topCompetitors,
+  } = params;
+
+  const lines: string[] = [
+    `# SERPVault Executive SEO Strategy Report`,
+    `*Generated on ${date}*`,
+    '',
+    '## 1. Executive Summary & Scope',
+    `- **Project / Site Name:** ${scopeLabel}`,
+    `- **Target Domain:** ${selectedSite?.domain || 'All Projects'}`,
+    `- **Target Location/Database:** ${selectedSite?.location || '-'}`,
+    `- **Niche Focus:** ${selectedSite?.niche || '-'}`,
+    '',
+    '## 2. SEO Dataset Overview',
+    'Below is a summary of the data imported and analyzed for this project scope:',
+    '',
+    `| Dataset | Count | Description |`,
+    `|---------|-------|-------------|`,
+    `| **Keywords** | ${counts.keywords.toLocaleString()} | Total monitored keywords |`,
+    `| **Keyword Gaps** | ${counts.gaps.toLocaleString()} | Keyword opportunities where competitors rank higher |`,
+    `| **Backlink Opportunities** | ${counts.backlinks.toLocaleString()} | Competitor backlink pages |`,
+    `| **Competitor Pages** | ${counts.pages.toLocaleString()} | High-performing competitor URLs |`,
+    `| **Referring Domains** | ${counts.domains.toLocaleString()} | Domains linking to competitors |`,
+    '',
+    '## 3. Workflow Status Summary',
+    'Status of the identified SEO deliverables and tasks:',
+    `- **Planned Opportunities:** ${workflowCounts.planned}`,
+    `- **In-Progress Tasks:** ${workflowCounts.inProgress}`,
+    `- **Completed Deliverables:** ${workflowCounts.done}`,
+    '',
+    '## 4. Top 10 Priority SEO Opportunities',
+    'The highest-value keyword and link opportunities currently in scope:',
+    '',
+    '| Rank | Type | Title | Opportunity Details | Opportunity Score |',
+    '|------|------|-------|---------------------|-------------------|',
+    ...topOpportunities.slice(0, 10).map((opt, idx) => {
+      return `| ${idx + 1} | ${opt.type.toUpperCase()} | ${opt.title} | ${cleanMDCell(opt.detail)} | ${opt.score} / 100 |`;
+    }),
+    '',
+    '## 5. Top Content Briefs',
+    'Prioritized content structure recommendations based on keyword clusters:',
+    '',
+    '| Brief Title | Suggested URL | Primary Keyword | Monthly Search Volume | Opportunity Score |',
+    '|-------------|---------------|-----------------|-----------------------|-------------------|',
+    ...topBriefs.slice(0, 10).map((brief) => {
+      return `| ${brief.title} | \`${brief.suggestedUrl}\` | **${brief.primaryKeyword}** | ${brief.monthlyVolumeTotal?.toLocaleString() ?? 0} | ${brief.opportunityScore} / 100 |`;
+    }),
+    '',
+    '## 6. Competitive Intelligence Summary',
+    'Top competitors identified in this project scope, ranked by opportunity score:',
+    '',
+    '| Competitor Domain | Est. Monthly Traffic | Pages Indexed | Content Gaps | Link Prospects | Opportunity Score |',
+    '|-------------------|----------------------|---------------|--------------|----------------|-------------------|',
+    ...topCompetitors.slice(0, 10).map((comp) => {
+      return `| ${comp.domain} | ${comp.estTraffic?.toLocaleString() ?? 0} | ${comp.pageCount} | ${comp.gapKeywordCount} | ${comp.backlinkProspectCount + comp.referringDomainCount} | ${comp.opportunityScore} / 100 |`;
+    }),
+  ];
+
+  download(lines.join('\n'), scopedFilename('serpvault-executive-strategy-report', 'md', scopeSlug), 'text/markdown');
 }
