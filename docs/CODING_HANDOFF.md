@@ -2,16 +2,9 @@
 
 ## Context & Repository State
 - **Current Branch**: `feature/project-site-selector`
-- **Latest Pushed Commit**: `5a3ac0f Persist opportunity workflow state in Supabase`
+- **Latest Pushed Commit**: `08ce2dd Persist content brief workflow state in Supabase`
 - **Final Session Batch**:
-  - [ ] `app/content-briefs/page.tsx`
-  - [ ] `app/export/page.tsx`
   - [ ] `docs/CODING_HANDOFF.md`
-  - [ ] `docs/PRODUCTION_BACKEND_PLAN.md`
-  - [ ] `lib/content-brief-workflow.ts`
-  - [ ] `supabase/migrations/20260701000003_content_brief_workflow.sql`
-  - [ ] `supabase/schema.sql`
-  - [ ] `test/content-brief-workflow.test.ts`
 
 ## Major Completed Features
 - [x] **Project/Site Selector**: Added robust site/project selector support.
@@ -59,16 +52,9 @@ Before completing code batches, run:
 
 ### [2026-07-01]
 <!-- AUTO_SNAPSHOT_START -->
-#### Auto Snapshot (HEAD: 5a3ac0f)
+#### Auto Snapshot (HEAD: 08ce2dd)
 - **Changed Files**:
-  - `app/content-briefs/page.tsx`
-  - `app/export/page.tsx`
   - `docs/CODING_HANDOFF.md`
-  - `docs/PRODUCTION_BACKEND_PLAN.md`
-  - `lib/content-brief-workflow.ts`
-  - `supabase/migrations/20260701000003_content_brief_workflow.sql`
-  - `supabase/schema.sql`
-  - `test/content-brief-workflow.test.ts`
 - **Validation Reminders**:
   - Run `npm run build` to verify types and Next.js compilation.
   - Run `git diff --check` to check for stray spaces and conflict markers.
