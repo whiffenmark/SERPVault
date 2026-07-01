@@ -4,6 +4,14 @@ import { useState, useEffect } from 'react';
 import { clearStore } from '@/lib/storage';
 import * as db from '@/lib/db';
 import { supabaseEnabled } from '@/lib/supabase/client';
+import {
+  signInWithEmail,
+  signUpWithEmail,
+  signOut,
+  subscribeAuthState,
+  isAuthAvailable
+} from '@/lib/supabase/auth';
+import { Session } from '@supabase/supabase-js';
 import Card from '@/components/Card';
 
 interface BackupFile {
@@ -24,6 +32,12 @@ const BACKUP_STORAGE_KEYS = [
 ] as const;
 
 export default function SettingsPage() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+
   const [counts, setCounts] = useState({
     uploads: 0,
     projects: 0,
@@ -79,6 +93,17 @@ export default function SettingsPage() {
 
   useEffect(() => {
     loadCounts();
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthAvailable) return;
+    const unsubscribe = subscribeAuthState((newSession) => {
+      setSession(newSession);
+      loadCounts();
+    });
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
   const storageSize = (() => {
@@ -159,6 +184,57 @@ export default function SettingsPage() {
       flash(`Migration failed: ${String(e)}`, 'error');
     }
     setMigrating(false);
+  }
+
+  async function handleSignIn() {
+    if (!email || !password) {
+      setAuthError('Please enter both email and password.');
+      return;
+    }
+    setAuthLoading(true);
+    setAuthError(null);
+    try {
+      await signInWithEmail(email, password);
+      flash('Signed in successfully.', 'success');
+      setEmail('');
+      setPassword('');
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleSignUp() {
+    if (!email || !password) {
+      setAuthError('Please enter both email and password.');
+      return;
+    }
+    setAuthLoading(true);
+    setAuthError(null);
+    try {
+      await signUpWithEmail(email, password);
+      flash('Signed up successfully. Check your email for confirmation.', 'success');
+      setEmail('');
+      setPassword('');
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleSignOut() {
+    setAuthLoading(true);
+    setAuthError(null);
+    try {
+      await signOut();
+      flash('Signed out successfully.', 'success');
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAuthLoading(false);
+    }
   }
 
   // Backup & Restore logic
@@ -342,7 +418,7 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Supabase Status */}
+        {/* Supabase Status & Auth */}
         <div style={{ background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '1.5rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
             <h2 style={{ fontSize: '1rem', fontWeight: 600 }}>Supabase Connection</h2>
@@ -369,15 +445,83 @@ export default function SettingsPage() {
                 <button
                   type="button"
                   onClick={handleMigrate}
-                  disabled={migrating}
-                  style={{ background: 'transparent', border: '1px solid var(--accent)', color: 'var(--accent)', borderRadius: '7px', padding: '0.5rem 1.25rem', cursor: migrating ? 'wait' : 'pointer', fontWeight: 600, fontSize: '0.85rem', opacity: migrating ? 0.6 : 1 }}
+                  disabled={migrating || !session}
+                  title={!session ? 'Sign in to sync local data to Supabase' : 'Migrate all local storage data to Supabase'}
+                  style={{ background: 'transparent', border: '1px solid var(--accent)', color: 'var(--accent)', borderRadius: '7px', padding: '0.5rem 1.25rem', cursor: migrating || !session ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.85rem', opacity: migrating || !session ? 0.4 : 1 }}
                 >
                   {migrating ? 'Migrating…' : 'Migrate Local → Supabase'}
                 </button>
               </div>
               <p style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: '0.75rem' }}>
-                "Migrate" uploads all localStorage data to Supabase. Safe to run multiple times — uses upsert.
+                "Migrate" uploads all localStorage data to Supabase. Safe to run multiple times — uses upsert. Requires sign-in first.
               </p>
+
+              {/* Auth / Sync Section */}
+              <div style={{ borderTop: '1px solid var(--card-border)', paddingTop: '1.25rem', marginTop: '1.25rem' }}>
+                <h3 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem' }}>
+                  Authentication & Sync
+                </h3>
+                {session ? (
+                  <div>
+                    <p style={{ fontSize: '0.82rem', color: 'var(--muted)', marginBottom: '0.75rem' }}>
+                      Signed in as <strong style={{ color: 'var(--foreground)' }}>{session.user?.email}</strong>. Data will automatically sync with your production account.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleSignOut}
+                      disabled={authLoading}
+                      style={{ background: 'var(--danger)', color: '#fff', border: 'none', borderRadius: '7px', padding: '0.4rem 1rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem', opacity: authLoading ? 0.6 : 1 }}
+                    >
+                      {authLoading ? 'Signing out...' : 'Sign Out'}
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    <p style={{ fontSize: '0.82rem', color: 'var(--muted)', marginBottom: '1rem' }}>
+                      Local mode remains available. Sign in to sync data to the production database.
+                    </p>
+                    {authError && (
+                      <div style={{ color: 'var(--danger)', fontSize: '0.78rem', marginBottom: '0.75rem' }}>
+                        {authError}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxWidth: '320px', marginBottom: '1rem' }}>
+                      <input
+                        type="email"
+                        placeholder="Email Address"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        style={{ background: 'var(--card-input, rgba(255,255,255,0.03))', border: '1px solid var(--card-border)', borderRadius: '6px', padding: '0.4rem 0.75rem', color: 'var(--foreground)', fontSize: '0.85rem' }}
+                      />
+                      <input
+                        type="password"
+                        placeholder="Password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        style={{ background: 'var(--card-input, rgba(255,255,255,0.03))', border: '1px solid var(--card-border)', borderRadius: '6px', padding: '0.4rem 0.75rem', color: 'var(--foreground)', fontSize: '0.85rem' }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <button
+                        type="button"
+                        onClick={handleSignIn}
+                        disabled={authLoading}
+                        style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: '7px', padding: '0.45rem 1.1rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem', opacity: authLoading ? 0.6 : 1 }}
+                      >
+                        {authLoading ? 'Loading...' : 'Sign In'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSignUp}
+                        disabled={authLoading}
+                        style={{ background: 'transparent', border: '1px solid var(--accent)', color: 'var(--accent)', borderRadius: '7px', padding: '0.45rem 1.1rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem', opacity: authLoading ? 0.6 : 1 }}
+                      >
+                        Sign Up
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </>
           ) : (
             <p style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>

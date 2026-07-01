@@ -10,6 +10,7 @@
  */
 
 import { getSupabase } from './supabase/client';
+import { getCurrentUserId } from './supabase/auth';
 import { getStore, updateStore, removeUpload as lsRemoveUpload } from './storage';
 import type {
   UploadRecord,
@@ -38,7 +39,10 @@ function chunk<T>(arr: T[], size: number): T[][] {
 async function sbInsert(table: string, rows: Record<string, unknown>[]): Promise<void> {
   const sb = getSupabase();
   if (!sb || rows.length === 0) return;
-  for (const batch of chunk(rows, 500)) {
+  const userId = await getCurrentUserId();
+  if (!userId) return; // Skip Supabase writes if no user is signed in
+  const rowsWithUserId = rows.map(r => ({ ...r, user_id: userId }));
+  for (const batch of chunk(rowsWithUserId, 500)) {
     const { error } = await sb.from(table).insert(batch);
     if (error) console.error(`[db] insert ${table}:`, error.message);
   }
@@ -325,23 +329,26 @@ async function getUploadInfoMap(): Promise<Map<string, UploadInfo>> {
     }
   }
 
-  // 2. Supabase if configured
+  // 2. Supabase if configured & user is signed in
   const sb = getSupabase();
   if (sb) {
-    try {
-      const { data, error } = await sb.from('uploads').select('id, project_id, uploaded_at');
-      if (data && !error) {
-        for (const row of data) {
-          if (row.id) {
-            infoMap.set(row.id, {
-              projectId: row.project_id || 'unassigned',
-              uploadedAt: row.uploaded_at || '',
-            });
+    const userId = await getCurrentUserId();
+    if (userId) {
+      try {
+        const { data, error } = await sb.from('uploads').select('id, project_id, uploaded_at').eq('user_id', userId);
+        if (data && !error) {
+          for (const row of data) {
+            if (row.id) {
+              infoMap.set(row.id, {
+                projectId: row.project_id || 'unassigned',
+                uploadedAt: row.uploaded_at || '',
+              });
+            }
           }
         }
+      } catch (e) {
+        console.error('[db] failed to fetch uploads for info map:', e);
       }
-    } catch (e) {
-      console.error('[db] failed to fetch uploads for info map:', e);
     }
   }
 
@@ -413,10 +420,13 @@ export async function saveKeywords(rows: KeywordRecord[]): Promise<number> {
     // Update Supabase upload cleanedRowCount
     const sb = getSupabase();
     if (sb) {
-      try {
-        await sb.from('uploads').update({ cleaned_row_count: finalSavedCount }).eq('id', uploadId);
-      } catch (err) {
-        console.error('[db] failed to update upload cleaned_row_count in Supabase:', err);
+      const userId = await getCurrentUserId();
+      if (userId) {
+        try {
+          await sb.from('uploads').update({ cleaned_row_count: finalSavedCount }).eq('id', uploadId).eq('user_id', userId);
+        } catch (err) {
+          console.error('[db] failed to update upload cleaned_row_count in Supabase:', err);
+        }
       }
     }
   }
@@ -490,12 +500,15 @@ export async function deleteProject(projectId: string): Promise<void> {
 
   const sb = getSupabase();
   if (sb) {
-    try {
-      await sb.from('uploads').update({ project_id: null }).eq('project_id', projectId);
-      await sb.from('competitors').delete().eq('project_id', projectId);
-      await sb.from('projects').delete().eq('id', projectId);
-    } catch (err) {
-      console.error('[db] deleteProject Supabase error:', err);
+    const userId = await getCurrentUserId();
+    if (userId) {
+      try {
+        await sb.from('uploads').update({ project_id: null }).eq('project_id', projectId).eq('user_id', userId);
+        await sb.from('competitors').delete().eq('project_id', projectId).eq('user_id', userId);
+        await sb.from('projects').delete().eq('id', projectId).eq('user_id', userId);
+      } catch (err) {
+        console.error('[db] deleteProject Supabase error:', err);
+      }
     }
   }
 }
@@ -510,16 +523,20 @@ export async function updateUploadProject(uploadIds: string[], projectId: string
 
   const sb = getSupabase();
   if (sb && uploadIds.length > 0) {
-    try {
-      const { error } = await sb
-        .from('uploads')
-        .update({ project_id: projectId ?? null })
-        .in('id', uploadIds);
-      if (error) {
-        console.error(`[db] updateUploadProject Supabase error:`, error.message);
+    const userId = await getCurrentUserId();
+    if (userId) {
+      try {
+        const { error } = await sb
+          .from('uploads')
+          .update({ project_id: projectId ?? null })
+          .in('id', uploadIds)
+          .eq('user_id', userId);
+        if (error) {
+          console.error(`[db] updateUploadProject Supabase error:`, error.message);
+        }
+      } catch (err) {
+        console.error('[db] updateUploadProject Supabase error:', err);
       }
-    } catch (err) {
-      console.error('[db] updateUploadProject Supabase error:', err);
     }
   }
 }
@@ -531,16 +548,19 @@ export async function updateUploadProject(uploadIds: string[], projectId: string
 export async function getProjects(): Promise<ProjectRecord[]> {
   const sb = getSupabase();
   if (sb) {
-    try {
-      const { data, error } = await sb.from('projects').select('*').order('created_at', { ascending: false });
-      if (data && !error) {
-        const projects = data.map(fromProjectRow);
-        updateStore(s => ({ ...s, projects }));
-        return projects;
+    const userId = await getCurrentUserId();
+    if (userId) {
+      try {
+        const { data, error } = await sb.from('projects').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+        if (data && !error) {
+          const projects = data.map(fromProjectRow);
+          updateStore(s => ({ ...s, projects }));
+          return projects;
+        }
+        console.error('[db] getProjects:', error?.message);
+      } catch (e) {
+        console.error('[db] getProjects exception:', e);
       }
-      console.error('[db] getProjects:', error?.message);
-    } catch (e) {
-      console.error('[db] getProjects exception:', e);
     }
   }
   return getStore().projects || [];
@@ -549,16 +569,19 @@ export async function getProjects(): Promise<ProjectRecord[]> {
 export async function getCompetitors(): Promise<CompetitorRecord[]> {
   const sb = getSupabase();
   if (sb) {
-    try {
-      const { data, error } = await sb.from('competitors').select('*').order('created_at', { ascending: false });
-      if (data && !error) {
-        const competitors = data.map(fromCompetitorRow);
-        updateStore(s => ({ ...s, competitors }));
-        return competitors;
+    const userId = await getCurrentUserId();
+    if (userId) {
+      try {
+        const { data, error } = await sb.from('competitors').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+        if (data && !error) {
+          const competitors = data.map(fromCompetitorRow);
+          updateStore(s => ({ ...s, competitors }));
+          return competitors;
+        }
+        console.error('[db] getCompetitors:', error?.message);
+      } catch (e) {
+        console.error('[db] getCompetitors exception:', e);
       }
-      console.error('[db] getCompetitors:', error?.message);
-    } catch (e) {
-      console.error('[db] getCompetitors exception:', e);
     }
   }
   return getStore().competitors || [];
@@ -567,16 +590,19 @@ export async function getCompetitors(): Promise<CompetitorRecord[]> {
 export async function getUploads(): Promise<UploadRecord[]> {
   const sb = getSupabase();
   if (sb) {
-    try {
-      const { data, error } = await sb.from('uploads').select('*').order('uploaded_at', { ascending: false });
-      if (data && !error) {
-        const uploads = data.map(fromUploadRow);
-        updateStore(s => ({ ...s, uploads }));
-        return uploads;
+    const userId = await getCurrentUserId();
+    if (userId) {
+      try {
+        const { data, error } = await sb.from('uploads').select('*').eq('user_id', userId).order('uploaded_at', { ascending: false });
+        if (data && !error) {
+          const uploads = data.map(fromUploadRow);
+          updateStore(s => ({ ...s, uploads }));
+          return uploads;
+        }
+        console.error('[db] getUploads:', error?.message);
+      } catch (e) {
+        console.error('[db] getUploads exception:', e);
       }
-      console.error('[db] getUploads:', error?.message);
-    } catch (e) {
-      console.error('[db] getUploads exception:', e);
     }
   }
   return getStore().uploads;
@@ -585,21 +611,26 @@ export async function getUploads(): Promise<UploadRecord[]> {
 export async function getKeywords(): Promise<KeywordRecord[]> {
   const sb = getSupabase();
   let allKeywords: KeywordRecord[] = [];
+  let fetchedFromSb = false;
 
   if (sb) {
-    try {
-      const { data, error } = await sb.from('keywords').select('*').order('opportunity_score', { ascending: false, nullsFirst: false });
-      if (data && !error) {
-        allKeywords = data.map(fromKwRow);
-      } else {
-        console.error('[db] getKeywords:', error?.message);
-        allKeywords = getStore().keywords || [];
+    const userId = await getCurrentUserId();
+    if (userId) {
+      try {
+        const { data, error } = await sb.from('keywords').select('*').eq('user_id', userId).order('opportunity_score', { ascending: false, nullsFirst: false });
+        if (data && !error) {
+          allKeywords = data.map(fromKwRow);
+          fetchedFromSb = true;
+        } else {
+          console.error('[db] getKeywords:', error?.message);
+        }
+      } catch (e) {
+        console.error('[db] getKeywords exception:', e);
       }
-    } catch (e) {
-      console.error('[db] getKeywords exception:', e);
-      allKeywords = getStore().keywords || [];
     }
-  } else {
+  }
+
+  if (!fetchedFromSb) {
     allKeywords = getStore().keywords || [];
   }
 
@@ -633,16 +664,19 @@ export async function getKeywords(): Promise<KeywordRecord[]> {
 
     // Delete duplicate keyword row IDs from Supabase database
     if (sb) {
-      try {
-        const ids = Array.from(duplicateIdsToDelete);
-        for (const batch of chunk(ids, 100)) {
-          const { error } = await sb.from('keywords').delete().in('id', batch);
-          if (error) {
-            console.error('[db] failed to delete duplicate keywords from Supabase:', error.message);
+      const userId = await getCurrentUserId();
+      if (userId) {
+        try {
+          const ids = Array.from(duplicateIdsToDelete);
+          for (const batch of chunk(ids, 100)) {
+            const { error } = await sb.from('keywords').delete().in('id', batch).eq('user_id', userId);
+            if (error) {
+              console.error('[db] failed to delete duplicate keywords from Supabase:', error.message);
+            }
           }
+        } catch (err) {
+          console.error('[db] exception during Supabase delete of duplicate keywords:', err);
         }
-      } catch (err) {
-        console.error('[db] exception during Supabase delete of duplicate keywords:', err);
       }
     }
 
@@ -656,9 +690,12 @@ export async function getKeywords(): Promise<KeywordRecord[]> {
 export async function getKeywordGaps(): Promise<KeywordGapRecord[]> {
   const sb = getSupabase();
   if (sb) {
-    const { data, error } = await sb.from('keyword_gaps').select('*').order('opportunity_score', { ascending: false, nullsFirst: false });
-    if (data && !error) return data.map(fromGapRow);
-    console.error('[db] getKeywordGaps:', error?.message);
+    const userId = await getCurrentUserId();
+    if (userId) {
+      const { data, error } = await sb.from('keyword_gaps').select('*').eq('user_id', userId).order('opportunity_score', { ascending: false, nullsFirst: false });
+      if (data && !error) return data.map(fromGapRow);
+      console.error('[db] getKeywordGaps:', error?.message);
+    }
   }
   return getStore().keywordGaps;
 }
@@ -666,9 +703,12 @@ export async function getKeywordGaps(): Promise<KeywordGapRecord[]> {
 export async function getCompetitorPages(): Promise<CompetitorPageRecord[]> {
   const sb = getSupabase();
   if (sb) {
-    const { data, error } = await sb.from('competitor_pages').select('*').order('traffic', { ascending: false, nullsFirst: false });
-    if (data && !error) return data.map(fromCpRow);
-    console.error('[db] getCompetitorPages:', error?.message);
+    const userId = await getCurrentUserId();
+    if (userId) {
+      const { data, error } = await sb.from('competitor_pages').select('*').eq('user_id', userId).order('traffic', { ascending: false, nullsFirst: false });
+      if (data && !error) return data.map(fromCpRow);
+      console.error('[db] getCompetitorPages:', error?.message);
+    }
   }
   return getStore().competitorPages;
 }
@@ -676,9 +716,12 @@ export async function getCompetitorPages(): Promise<CompetitorPageRecord[]> {
 export async function getBacklinks(): Promise<BacklinkRecord[]> {
   const sb = getSupabase();
   if (sb) {
-    const { data, error } = await sb.from('backlinks').select('*').order('opportunity_score', { ascending: false, nullsFirst: false });
-    if (data && !error) return data.map(fromBlRow);
-    console.error('[db] getBacklinks:', error?.message);
+    const userId = await getCurrentUserId();
+    if (userId) {
+      const { data, error } = await sb.from('backlinks').select('*').eq('user_id', userId).order('opportunity_score', { ascending: false, nullsFirst: false });
+      if (data && !error) return data.map(fromBlRow);
+      console.error('[db] getBacklinks:', error?.message);
+    }
   }
   return getStore().backlinks;
 }
@@ -686,9 +729,12 @@ export async function getBacklinks(): Promise<BacklinkRecord[]> {
 export async function getReferringDomains(): Promise<ReferringDomainRecord[]> {
   const sb = getSupabase();
   if (sb) {
-    const { data, error } = await sb.from('referring_domains').select('*');
-    if (data && !error) return data.map(fromRdRow);
-    console.error('[db] getReferringDomains:', error?.message);
+    const userId = await getCurrentUserId();
+    if (userId) {
+      const { data, error } = await sb.from('referring_domains').select('*').eq('user_id', userId);
+      if (data && !error) return data.map(fromRdRow);
+      console.error('[db] getReferringDomains:', error?.message);
+    }
   }
   return getStore().referringDomains;
 }
@@ -696,9 +742,12 @@ export async function getReferringDomains(): Promise<ReferringDomainRecord[]> {
 export async function getAnchorTexts(): Promise<AnchorTextRecord[]> {
   const sb = getSupabase();
   if (sb) {
-    const { data, error } = await sb.from('anchor_texts').select('*');
-    if (data && !error) return data.map(fromAtRow);
-    console.error('[db] getAnchorTexts:', error?.message);
+    const userId = await getCurrentUserId();
+    if (userId) {
+      const { data, error } = await sb.from('anchor_texts').select('*').eq('user_id', userId);
+      if (data && !error) return data.map(fromAtRow);
+      console.error('[db] getAnchorTexts:', error?.message);
+    }
   }
   return getStore().anchorTexts;
 }
@@ -706,9 +755,12 @@ export async function getAnchorTexts(): Promise<AnchorTextRecord[]> {
 export async function getDedupeReports(): Promise<DedupeReport[]> {
   const sb = getSupabase();
   if (sb) {
-    const { data, error } = await sb.from('dedupe_reports').select('*').order('created_at', { ascending: false });
-    if (data && !error) return data.map(fromDrRow);
-    console.error('[db] getDedupeReports:', error?.message);
+    const userId = await getCurrentUserId();
+    if (userId) {
+      const { data, error } = await sb.from('dedupe_reports').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+      if (data && !error) return data.map(fromDrRow);
+      console.error('[db] getDedupeReports:', error?.message);
+    }
   }
   return getStore().dedupeReports;
 }
@@ -722,8 +774,11 @@ type TagTable = 'keywords' | 'keyword_gaps' | 'competitor_pages' | 'backlinks' |
 export async function updateTag(table: TagTable, id: string, tag: Tag | undefined): Promise<void> {
   const sb = getSupabase();
   if (sb) {
-    const { error } = await sb.from(table).update({ tag: tag ?? null }).eq('id', id);
-    if (error) console.error(`[db] updateTag ${table}:`, error.message);
+    const userId = await getCurrentUserId();
+    if (userId) {
+      const { error } = await sb.from(table).update({ tag: tag ?? null }).eq('id', id).eq('user_id', userId);
+      if (error) console.error(`[db] updateTag ${table}:`, error.message);
+    }
   }
   // localStorage is updated optimistically by the calling page
 }
@@ -738,12 +793,15 @@ export async function deleteUpload(uploadId: string): Promise<void> {
 
   const sb = getSupabase();
   if (!sb) return;
+  const userId = await getCurrentUserId();
+  if (!userId) return;
+
   const tables: TagTable[] = ['keywords', 'keyword_gaps', 'competitor_pages', 'backlinks', 'referring_domains', 'anchor_texts'];
   for (const t of tables) {
-    await sb.from(t).delete().eq('upload_id', uploadId);
+    await sb.from(t).delete().eq('upload_id', uploadId).eq('user_id', userId);
   }
-  await sb.from('dedupe_reports').delete().eq('upload_id', uploadId);
-  await sb.from('uploads').delete().eq('id', uploadId);
+  await sb.from('dedupe_reports').delete().eq('upload_id', uploadId).eq('user_id', userId);
+  await sb.from('uploads').delete().eq('id', uploadId).eq('user_id', userId);
 }
 
 // ---------------------------------------------------------------------------
@@ -753,6 +811,8 @@ export async function deleteUpload(uploadId: string): Promise<void> {
 export async function migrateLocalToSupabase(): Promise<{ tables: string[]; rows: number }> {
   const sb = getSupabase();
   if (!sb) throw new Error('Supabase not configured');
+  const userId = await getCurrentUserId();
+  if (!userId) throw new Error('No user is signed in to sync data');
 
   const store = getStore();
   let totalRows = 0;
@@ -760,7 +820,8 @@ export async function migrateLocalToSupabase(): Promise<{ tables: string[]; rows
 
   const run = async (table: string, rows: Record<string, unknown>[]) => {
     if (rows.length === 0) return;
-    for (const batch of chunk(rows, 500)) {
+    const rowsWithUserId = rows.map(r => ({ ...r, user_id: userId }));
+    for (const batch of chunk(rowsWithUserId, 500)) {
       const { error } = await sb.from(table).upsert(batch, { onConflict: 'id' });
       if (error) console.error(`[migrate] ${table}:`, error.message);
     }

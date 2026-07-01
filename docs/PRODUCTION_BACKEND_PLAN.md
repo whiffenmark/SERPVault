@@ -12,49 +12,38 @@ This document outlines the phased migration plan for transitioning SERPVault fro
 
 ---
 
-## Phase 1: Authentication & User-Owned Data
+## Next Steps
+1. **Apply Migration**: Apply the timestamped SQL migration `20260701000000_auth_rls_foundation.sql` on the production database.
+2. **Backfill UI**: Create a production sync/backfill UI wizard in the settings page to assist users in migrating their local-first legacy data to the cloud.
+3. **Enforce RLS**: Verify and enforce RLS constraints fully after the private beta phase completes.
+
+---
+
+## Phase 1: Authentication & User-Owned Data (Foundation Completed)
 
 ### Objectives
 * Establish secure user identities.
 * Assign all data records to a specific user.
 
 ### Action Items
-- [ ] **Configure Supabase Auth**: Enable Email/Password authentication. Configure SMTP templates and password complexity policies.
-- [ ] **Define Profiles Schema**: Create a `profiles` table to store metadata (e.g., display name, preferences) linked via a foreign key to `auth.users.id`.
-- [ ] **Migrate Schemas**: Add `user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE` to all data tables:
-  * `projects`
-  * `uploads`
-  * `keywords`
-  * `keyword_gaps`
-  * `competitor_pages`
-  * `backlinks`
-  * `referring_domains`
-  * `anchor_texts`
-  * `dedupe_reports`
-  * `content_opportunities`
-  * `backlink_opportunities`
+- [x] **Configure Supabase Auth Client Helpers**: Added `lib/supabase/auth.ts` with client-safe `getCurrentUserId`, sign in/up/out functions.
+- [x] **Define Profiles Schema**: Added `profiles` table to migration SQL.
+- [x] **Migrate Schemas**: Created migration SQL to append `user_id` uuid column to projects, competitors, uploads, keywords, keyword_gaps, competitor_pages, backlinks, referring_domains, anchor_texts, dedupe_reports.
+- [x] **Compact Auth UI**: Added Auth / Sync panel in app/settings/page.tsx.
 
 ---
 
-## Phase 2: Schema Hardening & Row-Level Security (RLS)
+## Phase 2: Schema Hardening & Row-Level Security (RLS) (Foundation Completed)
 
 ### Objectives
 * Enforce complete isolation between tenants.
 * Optimize database access paths.
 
 ### Action Items
-- [ ] **Enable RLS Globally**: Run `ALTER TABLE <table_name> ENABLE ROW LEVEL SECURITY;` on every database table.
-- [ ] **Define Access Policies**: Create policies verifying that the executing user matches the resource's `user_id`:
-  ```sql
-  CREATE POLICY "Users can only access their own projects" 
-    ON projects 
-    FOR ALL 
-    USING (auth.uid() = user_id);
-  ```
-- [ ] **Foreign Key Cascade Policies**: Ensure child tables (e.g. `keywords`) use foreign keys pointing to parent tables (e.g. `uploads`) with `ON DELETE CASCADE`.
-- [ ] **Index Configuration**: Apply indexes on all foreign keys and query filters:
-  * Index on `(user_id)` on all tables.
-  * Composite index on `(project_id, user_id)` where applicable.
+- [x] **Enable RLS Globally**: Configured `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` inside the SQL migration file.
+- [x] **Define Access Policies**: Defined row-level policies verifying `auth.uid() = user_id` for all tables.
+- [x] **Index Configuration**: Added `user_id` and foreign key path indexes.
+
 
 ---
 

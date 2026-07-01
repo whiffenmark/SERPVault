@@ -139,6 +139,9 @@ create table if not exists dedupe_reports (
 -- Disable Row Level Security for personal use.
 -- This allows the publishable key to read/write all tables freely.
 -- If you add Supabase Auth later, re-enable RLS and add user-scoped policies.
+-- NOTE: For production environments, refer to migrations under supabase/migrations/,
+-- specifically 20260701000000_auth_rls_foundation.sql which enables RLS, adds
+-- user_id fields/indexes, and configures user-scoped access policies.
 -- ---------------------------------------------------------------------------
 alter table projects disable row level security;
 alter table competitors disable row level security;

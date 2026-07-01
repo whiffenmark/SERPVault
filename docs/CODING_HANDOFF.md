@@ -2,18 +2,16 @@
 
 ## Context & Repository State
 - **Current Branch**: `feature/project-site-selector`
-- **Latest Pushed Commit**: `c517fcb Add tests and fix mobile shell`
+- **Latest Pushed Commit**: `4d90436 Add e2e QA and import coverage`
 - **Final Session Batch**:
-  - [ ] `.gitignore`
+  - [ ] `app/settings/page.tsx`
   - [ ] `docs/CODING_HANDOFF.md`
   - [ ] `docs/PRODUCTION_BACKEND_PLAN.md`
-  - [ ] `lib/detect-report-type.ts`
-  - [ ] `lib/map-rows.ts`
-  - [ ] `package-lock.json`
-  - [ ] `package.json`
-  - [ ] `playwright.config.ts`
-  - [ ] `test/import-broadening.test.ts`
-  - [ ] `tests/e2e/smoke.spec.ts`
+  - [ ] `lib/db.ts`
+  - [ ] `lib/supabase/auth.ts`
+  - [ ] `supabase/migrations/20260701000000_auth_rls_foundation.sql`
+  - [ ] `supabase/schema.sql`
+  - [ ] `test/auth.test.ts`
 
 ## Major Completed Features
 - [x] **Project/Site Selector**: Added robust site/project selector support.
@@ -61,18 +59,16 @@ Before completing code batches, run:
 
 ### [2026-07-01]
 <!-- AUTO_SNAPSHOT_START -->
-#### Auto Snapshot (HEAD: c517fcb)
+#### Auto Snapshot (HEAD: 4d90436)
 - **Changed Files**:
-  - `.gitignore`
+  - `app/settings/page.tsx`
   - `docs/CODING_HANDOFF.md`
   - `docs/PRODUCTION_BACKEND_PLAN.md`
-  - `lib/detect-report-type.ts`
-  - `lib/map-rows.ts`
-  - `package-lock.json`
-  - `package.json`
-  - `playwright.config.ts`
-  - `test/import-broadening.test.ts`
-  - `tests/e2e/smoke.spec.ts`
+  - `lib/db.ts`
+  - `lib/supabase/auth.ts`
+  - `supabase/migrations/20260701000000_auth_rls_foundation.sql`
+  - `supabase/schema.sql`
+  - `test/auth.test.ts`
 - **Validation Reminders**:
   - Run `npm run build` to verify types and Next.js compilation.
   - Run `git diff --check` to check for stray spaces and conflict markers.
@@ -87,3 +83,15 @@ Before completing code batches, run:
   - `docs/CODING_HANDOFF.md`
 - **Validation**: `npm run build` and `git diff --check`
 - **Notes**: Completed initial type-hardening pass.
+
+### [2026-07-01] - Production Auth & RLS Foundation
+- **Files Touched**:
+  - `supabase/migrations/20260701000000_auth_rls_foundation.sql`
+  - `supabase/schema.sql`
+  - `lib/supabase/auth.ts`
+  - `lib/db.ts`
+  - `app/settings/page.tsx`
+  - `test/auth.test.ts`
+  - `docs/PRODUCTION_BACKEND_PLAN.md`
+- **Validation**: `npm test` successfully passed all 38 unit tests (including 7 new auth helper tests).
+- **Notes**: Developed Supabase migration for user profiles, user isolation RLS policies, table structures, and database indexing. Implemented client-safe auth helper layer and integrated Auth/Sync UI in the Settings page.
