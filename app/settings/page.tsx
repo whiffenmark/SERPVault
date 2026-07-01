@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { clearStore } from '@/lib/storage';
+import { clearStore, getStore } from '@/lib/storage';
+import type { AppStore } from '@/lib/types';
 import * as db from '@/lib/db';
 import { supabaseEnabled } from '@/lib/supabase/client';
 import {
@@ -11,8 +12,9 @@ import {
   subscribeAuthState,
   isAuthAvailable
 } from '@/lib/supabase/auth';
-import { Session } from '@supabase/supabase-js';
+import type { Session } from '@supabase/supabase-js';
 import Card from '@/components/Card';
+import { buildMigrationSummary } from '@/lib/migration-summary';
 
 interface BackupFile {
   appName: string;
@@ -57,6 +59,12 @@ export default function SettingsPage() {
   const [testing, setTesting] = useState(false);
   const [migrating, setMigrating] = useState(false);
 
+  // Preflight summary states
+  const [localStore, setLocalStore] = useState<AppStore | null>(null);
+  const [confirmMigration, setConfirmMigration] = useState(false);
+  const [migrationStatus, setMigrationStatus] = useState<'idle' | 'running' | 'success' | 'error'>('idle');
+  const [migrationMessage, setMigrationMessage] = useState<string | null>(null);
+
   // Backup & Restore states
   const [restoreData, setRestoreData] = useState<BackupFile | null>(null);
   const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
@@ -96,6 +104,10 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
+    setLocalStore(getStore());
+  }, [counts]);
+
+  useEffect(() => {
     if (!isAuthAvailable) return;
     const unsubscribe = subscribeAuthState((newSession) => {
       setSession(newSession);
@@ -106,20 +118,28 @@ export default function SettingsPage() {
     };
   }, []);
 
-  const storageSize = (() => {
+  const storageSizeInBytes = (() => {
     try {
       let totalBytes = 0;
       for (const key of BACKUP_STORAGE_KEYS) {
         const raw = localStorage.getItem(key) ?? '';
         totalBytes += new Blob([raw]).size;
       }
-      return totalBytes > 1024 * 1024
-        ? `${(totalBytes / 1024 / 1024).toFixed(2)} MB`
-        : `${(totalBytes / 1024).toFixed(1)} KB`;
+      return totalBytes;
     } catch {
-      return 'Unknown';
+      return undefined;
     }
   })();
+
+  const storageSize = storageSizeInBytes !== undefined
+    ? (storageSizeInBytes > 1024 * 1024
+        ? `${(storageSizeInBytes / 1024 / 1024).toFixed(2)} MB`
+        : `${(storageSizeInBytes / 1024).toFixed(1)} KB`)
+    : 'Unknown';
+
+  const summary = localStore
+    ? buildMigrationSummary(localStore, supabaseEnabled, !!session, storageSizeInBytes)
+    : null;
 
   function flash(text: string, type: 'success' | 'error' | 'info' = 'success') {
     setMessage({ text, type });
@@ -164,7 +184,7 @@ export default function SettingsPage() {
     try {
       const result = await db.testConnection();
       if (result.ok) {
-        flash(`Connected ✓  — ${result.latencyMs}ms`, 'success');
+        flash(`Connected [OK] — ${result.latencyMs}ms`, 'success');
       } else {
         flash(`Connection failed: ${result.error}`, 'error');
       }
@@ -174,16 +194,34 @@ export default function SettingsPage() {
     setTesting(false);
   }
 
-  async function handleMigrate() {
+  async function handleMigrateWithGuard() {
+    if (!summary) return;
+    setMigrationStatus('running');
+    setMigrationMessage(null);
     setMigrating(true);
+
     try {
-      const result = await db.migrateLocalToSupabase();
-      flash(`Migrated ${result.rows.toLocaleString()} rows to Supabase: ${result.tables.join(', ')}`, 'success');
-      loadCounts();
+      if (summary.totalRows === 0) {
+        // Zero-row migration gracefully handled
+        setMigrationStatus('success');
+        setMigrationMessage('No local data to migrate. Zero-row migration completed successfully [OK]');
+        flash('Zero-row migration completed successfully.', 'success');
+        setConfirmMigration(false);
+      } else {
+        const result = await db.migrateLocalToSupabase();
+        setMigrationStatus('success');
+        setMigrationMessage(`Successfully migrated ${result.rows.toLocaleString()} rows across ${result.tables.length} tables to Supabase [OK]`);
+        flash(`Migrated ${result.rows.toLocaleString()} rows to Supabase: ${result.tables.join(', ')}`, 'success');
+        setConfirmMigration(false);
+        loadCounts();
+      }
     } catch (e) {
+      setMigrationStatus('error');
+      setMigrationMessage(String(e));
       flash(`Migration failed: ${String(e)}`, 'error');
+    } finally {
+      setMigrating(false);
     }
-    setMigrating(false);
   }
 
   async function handleSignIn() {
@@ -426,103 +464,264 @@ export default function SettingsPage() {
               {supabaseEnabled ? '● Connected' : '○ Not configured'}
             </span>
           </div>
-          {supabaseEnabled ? (
-            <>
-              <div style={{ fontSize: '0.82rem', color: 'var(--muted)', marginBottom: '1rem' }}>
-                Project: <code style={{ background: 'rgba(99,102,241,0.1)', padding: '0.1rem 0.3rem', borderRadius: '3px', fontSize: '0.78rem' }}>
-                  {process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('https://', '').split('.')[0]}
-                </code>
-              </div>
-              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  onClick={handleTestConnection}
-                  disabled={testing}
-                  style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: '7px', padding: '0.5rem 1.25rem', cursor: testing ? 'wait' : 'pointer', fontWeight: 600, fontSize: '0.85rem', opacity: testing ? 0.6 : 1 }}
-                >
-                  {testing ? 'Testing…' : 'Test Connection'}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleMigrate}
-                  disabled={migrating || !session}
-                  title={!session ? 'Sign in to sync local data to Supabase' : 'Migrate all local storage data to Supabase'}
-                  style={{ background: 'transparent', border: '1px solid var(--accent)', color: 'var(--accent)', borderRadius: '7px', padding: '0.5rem 1.25rem', cursor: migrating || !session ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.85rem', opacity: migrating || !session ? 0.4 : 1 }}
-                >
-                  {migrating ? 'Migrating…' : 'Migrate Local → Supabase'}
-                </button>
-              </div>
-              <p style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: '0.75rem' }}>
-                "Migrate" uploads all localStorage data to Supabase. Safe to run multiple times — uses upsert. Requires sign-in first.
-              </p>
 
-              {/* Auth / Sync Section */}
-              <div style={{ borderTop: '1px solid var(--card-border)', paddingTop: '1.25rem', marginTop: '1.25rem' }}>
-                <h3 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem' }}>
-                  Authentication & Sync
-                </h3>
-                {session ? (
-                  <div>
-                    <p style={{ fontSize: '0.82rem', color: 'var(--muted)', marginBottom: '0.75rem' }}>
-                      Signed in as <strong style={{ color: 'var(--foreground)' }}>{session.user?.email}</strong>. Data will automatically sync with your production account.
-                    </p>
+          {supabaseEnabled && (
+            <div style={{ fontSize: '0.82rem', color: 'var(--muted)', marginBottom: '1rem' }}>
+              Project: <code style={{ background: 'rgba(99,102,241,0.1)', padding: '0.1rem 0.3rem', borderRadius: '3px', fontSize: '0.78rem' }}>
+                {process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('https://', '').split('.')[0]}
+              </code>
+            </div>
+          )}
+
+          {supabaseEnabled && (
+            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1.25rem' }}>
+              <button
+                type="button"
+                onClick={handleTestConnection}
+                disabled={testing}
+                style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: '7px', padding: '0.5rem 1.25rem', cursor: testing ? 'wait' : 'pointer', fontWeight: 600, fontSize: '0.85rem', opacity: testing ? 0.6 : 1 }}
+              >
+                {testing ? 'Testing…' : 'Test Connection'}
+              </button>
+            </div>
+          )}
+
+          {/* Cloud Migration Preflight Summary */}
+          {summary && (
+            <div style={{
+              background: 'rgba(255,255,255,0.01)',
+              border: '1px solid var(--card-border)',
+              borderRadius: '8px',
+              padding: '1rem',
+              marginTop: '1rem',
+              marginBottom: '1rem'
+            }}>
+              <h3 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem' }}>
+                Cloud Migration Preflight Summary
+              </h3>
+
+              {/* Local CSV Upload Notice */}
+              <div style={{
+                background: 'rgba(99, 102, 241, 0.05)',
+                borderLeft: '3px solid var(--accent)',
+                padding: '0.6rem 0.8rem',
+                borderRadius: '4px',
+                fontSize: '0.78rem',
+                color: 'var(--muted)',
+                marginBottom: '1rem',
+                lineHeight: '1.4'
+              }}>
+                <strong>Notice:</strong> Your local CSV uploads can remain local. You do not need a cloud project to analyze your data; it will continue to work perfectly in your browser cache.
+              </div>
+
+              {/* Statistics */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
+                <div style={{ background: 'rgba(255,255,255,0.02)', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--card-border)' }}>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--muted)' }}>Total Local Rows</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 700, marginTop: '0.1rem' }}>{summary.totalRows.toLocaleString()}</div>
+                </div>
+                <div style={{ background: 'rgba(255,255,255,0.02)', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--card-border)' }}>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--muted)' }}>Estimated Local Size</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 700, marginTop: '0.1rem' }}>{summary.estimatedStorage}</div>
+                </div>
+              </div>
+
+              {/* Table breakdown */}
+              {summary.totalRows > 0 && (
+                <div style={{ marginBottom: '1rem' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--muted)', marginBottom: '0.4rem', fontWeight: 500 }}>Per-Table Breakdown:</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                    {Object.entries(summary.perTableCounts).map(([table, count]) => {
+                      if (count === 0) return null;
+                      return (
+                        <span key={table} style={{
+                          fontSize: '0.72rem',
+                          padding: '0.15rem 0.4rem',
+                          borderRadius: '4px',
+                          background: 'rgba(255,255,255,0.03)',
+                          border: '1px solid var(--card-border)',
+                          color: 'var(--foreground)',
+                        }}>
+                          {table}: <strong>{count}</strong>
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Checklist Status */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginBottom: '1rem', fontSize: '0.78rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <span style={{ color: summary.supabaseAvailable ? 'var(--success)' : 'var(--danger)' }}>
+                    {summary.supabaseAvailable ? '[OK]' : '[X]'}
+                  </span>
+                  <span style={{ color: 'var(--muted)' }}>Supabase configured:</span>
+                  <span style={{ fontWeight: 500 }}>{summary.supabaseAvailable ? 'Available' : 'Missing env variables'}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <span style={{ color: summary.userSignedIn ? 'var(--success)' : 'var(--danger)' }}>
+                    {summary.userSignedIn ? '[OK]' : '[X]'}
+                  </span>
+                  <span style={{ color: 'var(--muted)' }}>User signed in:</span>
+                  <span style={{ fontWeight: 500 }}>{summary.userSignedIn ? 'Signed In' : 'Not Signed In'}</span>
+                </div>
+              </div>
+
+              {/* Warnings */}
+              {summary.warnings.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '1rem' }}>
+                  {summary.warnings.map((warn, i) => (
+                    <div key={i} style={{
+                      fontSize: '0.75rem',
+                      color: 'var(--warning)',
+                      background: 'rgba(245, 158, 11, 0.05)',
+                      border: '1px solid rgba(245, 158, 11, 0.2)',
+                      padding: '0.4rem 0.6rem',
+                      borderRadius: '6px',
+                      lineHeight: '1.4'
+                    }}>
+                      [!] {warn}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Migration Controls */}
+              {summary.canMigrate && (
+                <div style={{ borderTop: '1px solid var(--card-border)', paddingTop: '1rem', marginTop: '1rem' }}>
+                  {migrationStatus === 'success' && (
+                    <div style={{
+                      background: 'rgba(16, 185, 129, 0.08)',
+                      border: '1px solid var(--success)',
+                      color: 'var(--success)',
+                      borderRadius: '6px',
+                      padding: '0.6rem 0.8rem',
+                      fontSize: '0.8rem',
+                      marginBottom: '1rem',
+                      lineHeight: '1.4'
+                    }}>
+                      {migrationMessage}
+                    </div>
+                  )}
+                  {migrationStatus === 'error' && (
+                    <div style={{
+                      background: 'rgba(239, 68, 68, 0.08)',
+                      border: '1px solid var(--danger)',
+                      color: 'var(--danger)',
+                      borderRadius: '6px',
+                      padding: '0.6rem 0.8rem',
+                      fontSize: '0.8rem',
+                      marginBottom: '1rem',
+                      lineHeight: '1.4'
+                    }}>
+                      Migration Error: {migrationMessage}
+                    </div>
+                  )}
+
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', cursor: 'pointer', marginBottom: '1rem', userSelect: 'none' }}>
+                    <input
+                      type="checkbox"
+                      checked={confirmMigration}
+                      onChange={(e) => setConfirmMigration(e.target.checked)}
+                      disabled={migrationStatus === 'running'}
+                      style={{ marginTop: '0.2rem', cursor: 'pointer' }}
+                    />
+                    <span style={{ fontSize: '0.78rem', color: 'var(--foreground)', lineHeight: '1.4' }}>
+                      I understand that migrating will write my local projects and datasets to the cloud database under my account.
+                    </span>
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={handleMigrateWithGuard}
+                    disabled={!confirmMigration || migrationStatus === 'running'}
+                    style={{
+                      background: 'var(--accent)',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '7px',
+                      padding: '0.5rem 1.25rem',
+                      cursor: (!confirmMigration || migrationStatus === 'running') ? 'not-allowed' : 'pointer',
+                      fontWeight: 600,
+                      fontSize: '0.85rem',
+                      opacity: (!confirmMigration || migrationStatus === 'running') ? 0.5 : 1,
+                      transition: 'opacity 0.2s',
+                    }}
+                  >
+                    {migrationStatus === 'running' ? 'Syncing to Cloud...' : 'Confirm & Start Migration'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {supabaseEnabled ? (
+            <div style={{ borderTop: '1px solid var(--card-border)', paddingTop: '1.25rem', marginTop: '1.25rem' }}>
+              <h3 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem' }}>
+                Authentication & Sync
+              </h3>
+              {session ? (
+                <div>
+                  <p style={{ fontSize: '0.82rem', color: 'var(--muted)', marginBottom: '0.75rem' }}>
+                    Signed in as <strong style={{ color: 'var(--foreground)' }}>{session.user?.email}</strong>. Data will automatically sync with your production account.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleSignOut}
+                    disabled={authLoading}
+                    style={{ background: 'var(--danger)', color: '#fff', border: 'none', borderRadius: '7px', padding: '0.4rem 1rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem', opacity: authLoading ? 0.6 : 1 }}
+                  >
+                    {authLoading ? 'Signing out...' : 'Sign Out'}
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <p style={{ fontSize: '0.82rem', color: 'var(--muted)', marginBottom: '1rem' }}>
+                    Local mode remains available. Sign in to sync data to the production database.
+                  </p>
+                  {authError && (
+                    <div style={{ color: 'var(--danger)', fontSize: '0.78rem', marginBottom: '0.75rem' }}>
+                      {authError}
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxWidth: '320px', marginBottom: '1rem' }}>
+                    <input
+                      type="email"
+                      placeholder="Email Address"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      style={{ background: 'var(--card-input, rgba(255,255,255,0.03))', border: '1px solid var(--card-border)', borderRadius: '6px', padding: '0.4rem 0.75rem', color: 'var(--foreground)', fontSize: '0.85rem' }}
+                    />
+                    <input
+                      type="password"
+                      placeholder="Password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      style={{ background: 'var(--card-input, rgba(255,255,255,0.03))', border: '1px solid var(--card-border)', borderRadius: '6px', padding: '0.4rem 0.75rem', color: 'var(--foreground)', fontSize: '0.85rem' }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
                     <button
                       type="button"
-                      onClick={handleSignOut}
+                      onClick={handleSignIn}
                       disabled={authLoading}
-                      style={{ background: 'var(--danger)', color: '#fff', border: 'none', borderRadius: '7px', padding: '0.4rem 1rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem', opacity: authLoading ? 0.6 : 1 }}
+                      style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: '7px', padding: '0.45rem 1.1rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem', opacity: authLoading ? 0.6 : 1 }}
                     >
-                      {authLoading ? 'Signing out...' : 'Sign Out'}
+                      {authLoading ? 'Loading...' : 'Sign In'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSignUp}
+                      disabled={authLoading}
+                      style={{ background: 'transparent', border: '1px solid var(--accent)', color: 'var(--accent)', borderRadius: '7px', padding: '0.45rem 1.1rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem', opacity: authLoading ? 0.6 : 1 }}
+                    >
+                      Sign Up
                     </button>
                   </div>
-                ) : (
-                  <div>
-                    <p style={{ fontSize: '0.82rem', color: 'var(--muted)', marginBottom: '1rem' }}>
-                      Local mode remains available. Sign in to sync data to the production database.
-                    </p>
-                    {authError && (
-                      <div style={{ color: 'var(--danger)', fontSize: '0.78rem', marginBottom: '0.75rem' }}>
-                        {authError}
-                      </div>
-                    )}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxWidth: '320px', marginBottom: '1rem' }}>
-                      <input
-                        type="email"
-                        placeholder="Email Address"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        style={{ background: 'var(--card-input, rgba(255,255,255,0.03))', border: '1px solid var(--card-border)', borderRadius: '6px', padding: '0.4rem 0.75rem', color: 'var(--foreground)', fontSize: '0.85rem' }}
-                      />
-                      <input
-                        type="password"
-                        placeholder="Password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        style={{ background: 'var(--card-input, rgba(255,255,255,0.03))', border: '1px solid var(--card-border)', borderRadius: '6px', padding: '0.4rem 0.75rem', color: 'var(--foreground)', fontSize: '0.85rem' }}
-                      />
-                    </div>
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                      <button
-                        type="button"
-                        onClick={handleSignIn}
-                        disabled={authLoading}
-                        style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: '7px', padding: '0.45rem 1.1rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem', opacity: authLoading ? 0.6 : 1 }}
-                      >
-                        {authLoading ? 'Loading...' : 'Sign In'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleSignUp}
-                        disabled={authLoading}
-                        style={{ background: 'transparent', border: '1px solid var(--accent)', color: 'var(--accent)', borderRadius: '7px', padding: '0.45rem 1.1rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem', opacity: authLoading ? 0.6 : 1 }}
-                      >
-                        Sign Up
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </>
+                </div>
+              )}
+            </div>
           ) : (
             <p style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>
               Add <code style={{ fontSize: '0.78rem' }}>NEXT_PUBLIC_SUPABASE_URL</code> and{' '}

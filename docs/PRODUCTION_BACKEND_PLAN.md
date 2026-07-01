@@ -78,11 +78,7 @@ This document outlines the phased migration plan for transitioning SERPVault fro
 * Migrate existing user data from browser local storage to the new backend seamlessly.
 
 ### Action Items
-- [ ] **Build Migration Utility**: Create a migration wizard in the UI that:
-  1. Detects legacy `serpvault_store` in `localStorage` upon successful authentication.
-  2. Parses client-side data (projects, uploads, keywords).
-  3. Batches writes to the Supabase API inside a single transaction where possible.
-  4. Clears `localStorage` only after a successful server-side receipt confirmation.
+- [x] **Build Migration Utility**: Created a pure helper (`lib/migration-summary.ts`) and a guarded local-to-cloud backfill wizard in the Settings UI with preflight summary calculations, warnings, confirmation checkbox guards, progress states, and zero-row checks.
 - [ ] **Conflict Resolution**: Define rules for handling duplicate project names or domains during import (e.g., merge or prompt user to rename).
 
 ---

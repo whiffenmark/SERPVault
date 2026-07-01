@@ -2,16 +2,13 @@
 
 ## Context & Repository State
 - **Current Branch**: `feature/project-site-selector`
-- **Latest Pushed Commit**: `4d90436 Add e2e QA and import coverage`
+- **Latest Pushed Commit**: `6aaf3bd Add auth and RLS foundation`
 - **Final Session Batch**:
   - [ ] `app/settings/page.tsx`
   - [ ] `docs/CODING_HANDOFF.md`
   - [ ] `docs/PRODUCTION_BACKEND_PLAN.md`
-  - [ ] `lib/db.ts`
-  - [ ] `lib/supabase/auth.ts`
-  - [ ] `supabase/migrations/20260701000000_auth_rls_foundation.sql`
-  - [ ] `supabase/schema.sql`
-  - [ ] `test/auth.test.ts`
+  - [ ] `lib/migration-summary.ts`
+  - [ ] `test/migration-summary.test.ts`
 
 ## Major Completed Features
 - [x] **Project/Site Selector**: Added robust site/project selector support.
@@ -59,16 +56,13 @@ Before completing code batches, run:
 
 ### [2026-07-01]
 <!-- AUTO_SNAPSHOT_START -->
-#### Auto Snapshot (HEAD: 4d90436)
+#### Auto Snapshot (HEAD: 6aaf3bd)
 - **Changed Files**:
   - `app/settings/page.tsx`
   - `docs/CODING_HANDOFF.md`
   - `docs/PRODUCTION_BACKEND_PLAN.md`
-  - `lib/db.ts`
-  - `lib/supabase/auth.ts`
-  - `supabase/migrations/20260701000000_auth_rls_foundation.sql`
-  - `supabase/schema.sql`
-  - `test/auth.test.ts`
+  - `lib/migration-summary.ts`
+  - `test/migration-summary.test.ts`
 - **Validation Reminders**:
   - Run `npm run build` to verify types and Next.js compilation.
   - Run `git diff --check` to check for stray spaces and conflict markers.
@@ -95,3 +89,13 @@ Before completing code batches, run:
   - `docs/PRODUCTION_BACKEND_PLAN.md`
 - **Validation**: `npm test` successfully passed all 38 unit tests (including 7 new auth helper tests).
 - **Notes**: Developed Supabase migration for user profiles, user isolation RLS policies, table structures, and database indexing. Implemented client-safe auth helper layer and integrated Auth/Sync UI in the Settings page.
+
+### [2026-07-01] - Guarded Local-to-Cloud Backfill Summary & UI
+- **Files Touched**:
+  - `lib/migration-summary.ts`
+  - `test/migration-summary.test.ts`
+  - `app/settings/page.tsx`
+  - `docs/CODING_HANDOFF.md`
+  - `docs/PRODUCTION_BACKEND_PLAN.md`
+- **Validation**: `npm test` passed 42 unit tests (including 4 new focused node tests for the summary helper); `npm run build` succeeds successfully.
+- **Notes**: Added a pure helper to calculate local-to-cloud data migration summaries. Added a preflight summary section to the Settings page showing counts, size, warnings, and local CSV mode notice. Implemented confirmation check logic, progress/result visual feedback, and graceful handling of zero-row migrations.
