@@ -21,6 +21,7 @@ import { getSelectedProjectId, getStore, setSelectedProjectId as setStorageSelec
 import { getCurrentUserId } from '@/lib/supabase/auth';
 import { saveSelectedProjectSetting } from '@/lib/supabase/user-settings';
 import { resolveImportScope } from '@/lib/import-scope';
+import { saveUploadAuditLog } from '@/lib/upload-audit';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -259,7 +260,8 @@ async function commitToStore(
   rows: Record<string, string>[],
   reportType: ReportType,
   filename: string,
-  projectId?: string
+  projectId?: string,
+  eventType: 'import' | 'reimport' = 'import'
 ): Promise<{
   uploadId: string;
   totalRows: number;
@@ -304,11 +306,29 @@ async function commitToStore(
     await db.saveAnchorTexts(cleaned.map((r) => mapAnchorText(r, uploadId)));
   }
 
+  const totalDuplicates = report.duplicatesRemoved + dbDuplicates;
+  const dedupeRate = rows.length > 0 ? totalDuplicates / rows.length : 0;
+
+  // Persist upload audit log
+  await saveUploadAuditLog({
+    uploadId,
+    filename,
+    reportType,
+    projectId,
+    sourceTool: upload.sourceTool,
+    rowCount: rows.length,
+    cleanedRowCount: finalCleanedCount,
+    duplicatesRemoved: totalDuplicates,
+    dedupeRate,
+    dedupeReportId: dedupeReport.id,
+    eventType,
+  });
+
   return {
     uploadId,
     totalRows: rows.length,
     cleanedRows: finalCleanedCount,
-    duplicatesRemoved: report.duplicatesRemoved + dbDuplicates,
+    duplicatesRemoved: totalDuplicates,
     issues: report.issues,
   };
 }
@@ -574,7 +594,8 @@ export default function UploadPage() {
           result.rows,
           newType,
           result.filename,
-          scopeResult.effectiveProjectId
+          scopeResult.effectiveProjectId,
+          'reimport'
         );
 
         const isAutoAssigned = !projectId && scopeResult.effectiveProjectId;

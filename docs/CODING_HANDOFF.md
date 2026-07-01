@@ -2,13 +2,17 @@
 
 ## Context & Repository State
 - **Current Branch**: `feature/project-site-selector`
-- **Latest Pushed Commit**: `b937e41 Add project-scoped import guardrails`
+- **Latest Pushed Commit**: `d8582bb Add full data export bundle`
 - **Final Session Batch**:
   - [ ] `app/settings/page.tsx`
+  - [ ] `app/upload/page.tsx`
   - [ ] `docs/CODING_HANDOFF.md`
   - [ ] `docs/PRODUCTION_BACKEND_PLAN.md`
-  - [ ] `lib/all-data-export.ts`
-  - [ ] `test/all-data-export.test.ts`
+  - [ ] `lib/db.ts`
+  - [ ] `lib/upload-audit.ts`
+  - [ ] `supabase/migrations/20260701000004_upload_audit_logs.sql`
+  - [ ] `supabase/schema.sql`
+  - [ ] `test/privacy-audit.test.ts`
 
 ## Major Completed Features
 - [x] **Project/Site Selector**: Added robust site/project selector support.
@@ -56,17 +60,34 @@ Before completing code batches, run:
 
 ### [2026-07-01]
 <!-- AUTO_SNAPSHOT_START -->
-#### Auto Snapshot (HEAD: b937e41)
+#### Auto Snapshot (HEAD: d8582bb)
 - **Changed Files**:
   - `app/settings/page.tsx`
+  - `app/upload/page.tsx`
   - `docs/CODING_HANDOFF.md`
   - `docs/PRODUCTION_BACKEND_PLAN.md`
-  - `lib/all-data-export.ts`
-  - `test/all-data-export.test.ts`
+  - `lib/db.ts`
+  - `lib/upload-audit.ts`
+  - `supabase/migrations/20260701000004_upload_audit_logs.sql`
+  - `supabase/schema.sql`
+  - `test/privacy-audit.test.ts`
 - **Validation Reminders**:
   - Run `npm run build` to verify types and Next.js compilation.
   - Run `git diff --check` to check for stray spaces and conflict markers.
 <!-- AUTO_SNAPSHOT_END -->
+
+### [2026-07-01] - Privacy and Governance Items (Phase 6)
+- **Files Touched**:
+  - `supabase/migrations/20260701000004_upload_audit_logs.sql`
+  - `supabase/schema.sql`
+  - `lib/upload-audit.ts`
+  - `lib/db.ts`
+  - `app/upload/page.tsx`
+  - `app/settings/page.tsx`
+  - `test/privacy-audit.test.ts`
+  - `docs/PRODUCTION_BACKEND_PLAN.md`
+- **Validation**: `npm test`, `npm run build`, and `git diff --check`
+- **Notes**: Completed Phase 6 Privacy & Governance items. Created Supabase migration defining the `upload_audit_logs` table, its RLS policies, indexing, and the `delete_user_data()` RPC function. Added a pure database helper module `lib/upload-audit.ts` for typed audit log persistence and retrieval. Integrated audit logs into `commitToStore` and `handleReimport` to automatically track dedupe metrics and event types. Added a Settings danger-zone action for signed-in users with a double confirmation guard to call `deleteCloudUserData` which cleans both cloud Supabase data and matching local storage caches and workflows. Created unit tests in `test/privacy-audit.test.ts` covering audit logs construction and ensuring deletion table order remains dependency-safe.
 
 ### [2026-07-01] - Data Export Tools (Phase 6)
 - **Files Touched**:

@@ -61,6 +61,8 @@ export default function SettingsPage() {
 
   const [confirmClear, setConfirmClear] = useState(false);
   const [confirmClearWorkflow, setConfirmClearWorkflow] = useState(false);
+  const [confirmDeleteCloudData, setConfirmDeleteCloudData] = useState(false);
+  const [deletingCloudData, setDeletingCloudData] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [testing, setTesting] = useState(false);
   const [migrating, setMigrating] = useState(false);
@@ -184,6 +186,20 @@ export default function SettingsPage() {
     setConfirmClearWorkflow(false);
     flash('Workflow and editorial local state cleared.', 'success');
     loadCounts();
+  }
+
+  async function handleDeleteCloudData() {
+    setDeletingCloudData(true);
+    try {
+      await db.deleteCloudUserData();
+      flash('All cloud SERPVault data deleted successfully and local caches cleared.', 'success');
+      setConfirmDeleteCloudData(false);
+      loadCounts();
+    } catch (err) {
+      flash(`Failed to delete cloud data: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    } finally {
+      setDeletingCloudData(false);
+    }
   }
 
   async function handleTestConnection() {
@@ -953,6 +969,47 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
+
+        {/* Danger Zone */}
+        {session && (
+          <div style={{ background: 'var(--card)', border: '1px solid var(--danger)', borderRadius: '10px', padding: '1.5rem' }}>
+            <h2 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--danger)', marginBottom: '0.5rem' }}>Danger Zone</h2>
+            <p style={{ fontSize: '0.82rem', color: 'var(--muted)', marginBottom: '1.25rem' }}>
+              Permanently delete all cloud SERPVault data associated with your account from the production database. This clears all cloud projects, competitors, uploads, keywords, gaps, competitor pages, backlinks, referring domains, anchor texts, dedupe reports, user settings, workflows, and audit logs. The authentication identity itself will not be deleted.
+            </p>
+
+            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+              {!confirmDeleteCloudData ? (
+                <button
+                  type="button"
+                  onClick={() => setConfirmDeleteCloudData(true)}
+                  style={{ background: 'transparent', border: '1px solid var(--danger)', color: 'var(--danger)', borderRadius: '7px', padding: '0.5rem 1.25rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
+                >
+                  Delete Cloud SERPVault Data
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleDeleteCloudData}
+                    disabled={deletingCloudData}
+                    style={{ background: 'var(--danger)', border: 'none', color: '#fff', borderRadius: '7px', padding: '0.5rem 1.25rem', cursor: deletingCloudData ? 'wait' : 'pointer', fontWeight: 600, fontSize: '0.85rem', opacity: deletingCloudData ? 0.6 : 1 }}
+                  >
+                    {deletingCloudData ? 'Deleting...' : 'Yes, Delete All Cloud Data'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDeleteCloudData(false)}
+                    disabled={deletingCloudData}
+                    style={{ background: 'var(--card)', border: '1px solid var(--card-border)', color: 'var(--muted)', borderRadius: '7px', padding: '0.5rem 1.25rem', cursor: deletingCloudData ? 'not-allowed' : 'pointer', fontSize: '0.85rem' }}
+                  >
+                    Cancel
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* About Card */}
         <div style={{ background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '1.5rem' }}>

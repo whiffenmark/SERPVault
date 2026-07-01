@@ -90,8 +90,8 @@ This document outlines the phased migration plan for transitioning SERPVault fro
 
 ### Action Items
 - [x] **Data Export Tools**: Implement a single-click "Download All Data" tool in the Settings page compiling all user tables to a zip file of CSVs.
-- [ ] **Account Deletion (Right to Be Forgotten)**: Implement a clean account deletion routine that purges all user data via Postgres cascade deletes.
-- [ ] **Modification Audit Trail**: Track import timestamps, row counts, and dedupe rates in `upload_audit_logs`.
+- [x] **Account Deletion (Right to Be Forgotten)**: Implement a clean account deletion routine that purges all user data via Postgres cascade deletes.
+- [x] **Modification Audit Trail**: Track import timestamps, row counts, and dedupe rates in `upload_audit_logs`.
 
 ---
 

@@ -191,3 +191,22 @@ create table if not exists content_brief_workflows (
   primary key (user_id, brief_id)
 );
 alter table content_brief_workflows disable row level security;
+
+create table if not exists upload_audit_logs (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid,
+  upload_id text,
+  filename text,
+  report_type text,
+  project_id text,
+  source_tool text,
+  row_count integer,
+  cleaned_row_count integer,
+  duplicates_removed integer,
+  dedupe_rate numeric,
+  dedupe_report_id text,
+  event_type text default 'import',
+  created_at timestamptz default now(),
+  metadata jsonb default '{}'
+);
+alter table upload_audit_logs disable row level security;

@@ -899,3 +899,67 @@ export async function testConnection(): Promise<{ ok: boolean; latencyMs?: numbe
   if (error) return { ok: false, error: error.message };
   return { ok: true, latencyMs: Date.now() - t0 };
 }
+
+// ---------------------------------------------------------------------------
+// Delete all cloud and local user-owned data
+// ---------------------------------------------------------------------------
+
+export const DELETION_ORDER = [
+  'keywords',
+  'keyword_gaps',
+  'competitor_pages',
+  'backlinks',
+  'referring_domains',
+  'anchor_texts',
+  'dedupe_reports',
+  'upload_audit_logs',
+  'opportunity_workflow_items',
+  'content_brief_workflows',
+  'user_settings',
+  'uploads',
+  'competitors',
+  'projects',
+  'profiles'
+] as const;
+
+export async function deleteCloudUserData(): Promise<void> {
+  const sb = getSupabase();
+  if (sb) {
+    const userId = await getCurrentUserId();
+    if (userId) {
+      // Call the RPC function delete_user_data
+      const { error } = await sb.rpc('delete_user_data');
+      if (error) {
+        console.error('[db] delete_user_data RPC error, falling back to manual deletes:', error.message);
+
+        // Manual fallbacks in dependency-safe order:
+        for (const table of DELETION_ORDER) {
+          const { error: deleteError } = table === 'profiles'
+            ? await sb.from('profiles').delete().eq('id', userId)
+            : await sb.from(table).delete().eq('user_id', userId);
+          if (deleteError) {
+            throw new Error(`Failed to delete data from table ${table}: ${deleteError.message}`);
+          }
+        }
+      }
+    }
+  }
+
+  // Clear local storage data (matching local caches / workflow state)
+  if (typeof window !== 'undefined') {
+    // Clear main dataset storage:
+    localStorage.removeItem('serpvault_data');
+
+    // Clear workflow / settings / metadata storage:
+    const workflowKeys = [
+      'serpvault_opportunity_workflow',
+      'serpvault_action_plan_metadata',
+      'serpvault_content_brief_workflow',
+      'serpvault_export_history',
+      'serpvault_selected_project_id'
+    ];
+    for (const key of workflowKeys) {
+      localStorage.removeItem(key);
+    }
+  }
+}
