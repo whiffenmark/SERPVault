@@ -1,4 +1,12 @@
 import type { KeywordRecord, BacklinkRecord, CompetitorPageRecord } from './types';
+import type { OpportunityQueueItem } from './opportunity-queue';
+import type { OpportunityWorkflowStatus } from './opportunity-workflow';
+import type { ContentBrief } from './content-briefs';
+import { generateContentBriefMarkdown } from './content-briefs';
+import { generateContentBriefMarkdownWithWorkflow, type ContentBriefWorkflowItem } from './content-brief-workflow';
+import type { CompetitorSummary } from './competitive-intelligence';
+import type { SiteSelection } from './storage';
+
 
 function toCSV(rows: Record<string, unknown>[]): string {
   if (rows.length === 0) return '';
@@ -27,20 +35,24 @@ function download(content: string, filename: string, mime = 'text/csv') {
   URL.revokeObjectURL(url);
 }
 
-export function exportKeywordsCSV(rows: KeywordRecord[]): void {
+function scopedFilename(base: string, extension: string, scopeSlug?: string): string {
+  return `${base}-${scopeSlug || 'all-projects'}.${extension}`;
+}
+
+export function exportKeywordsCSV(rows: KeywordRecord[], scopeSlug?: string): void {
   const data = rows.map((r) => ({
     Keyword: r.keyword,
-    Volume: r.volume ?? '',
+    'Monthly Search Volume': r.volume ?? '',
     Difficulty: r.difficulty ?? '',
     CPC: r.cpc ?? '',
     Intent: r.intent ?? '',
     Tag: r.tag ?? '',
     'Opportunity Score': r.opportunityScore ?? '',
   }));
-  download(toCSV(data), 'serpvault-keywords.csv');
+  download(toCSV(data), scopedFilename('serpvault-keywords', 'csv', scopeSlug));
 }
 
-export function exportBacklinksCSV(rows: BacklinkRecord[]): void {
+export function exportBacklinksCSV(rows: BacklinkRecord[], scopeSlug?: string): void {
   const data = rows.map((r) => ({
     'Source URL': r.sourceUrl,
     'Target URL': r.targetUrl,
@@ -50,24 +62,24 @@ export function exportBacklinksCSV(rows: BacklinkRecord[]): void {
     Tag: r.tag ?? '',
     'Opportunity Score': r.opportunityScore ?? '',
   }));
-  download(toCSV(data), 'serpvault-backlinks.csv');
+  download(toCSV(data), scopedFilename('serpvault-backlinks', 'csv', scopeSlug));
 }
 
-export function exportContentPlanCSV(rows: KeywordRecord[]): void {
+export function exportContentPlanCSV(rows: KeywordRecord[], scopeSlug?: string): void {
   const tagged = rows.filter((r) => r.tag && r.tag !== 'Ignore');
   const data = tagged.map((r) => ({
     Keyword: r.keyword,
     'Content Type': r.tag ?? '',
-    Volume: r.volume ?? '',
+    'Monthly Search Volume': r.volume ?? '',
     Difficulty: r.difficulty ?? '',
     Intent: r.intent ?? '',
     'Opportunity Score': r.opportunityScore ?? '',
     'Target URL': r.url ?? '',
   }));
-  download(toCSV(data), 'serpvault-content-plan.csv');
+  download(toCSV(data), scopedFilename('serpvault-content-plan', 'csv', scopeSlug));
 }
 
-export function exportBacklinkTargetsCSV(rows: BacklinkRecord[]): void {
+export function exportBacklinkTargetsCSV(rows: BacklinkRecord[], scopeSlug?: string): void {
   const tagged = rows.filter((r) => r.tag === 'Backlink Target');
   const data = tagged.map((r) => ({
     'Source URL': r.sourceUrl,
@@ -75,13 +87,15 @@ export function exportBacklinkTargetsCSV(rows: BacklinkRecord[]): void {
     DA: r.domainAuthority ?? '',
     'Opportunity Score': r.opportunityScore ?? '',
   }));
-  download(toCSV(data), 'serpvault-backlink-targets.csv');
+  download(toCSV(data), scopedFilename('serpvault-backlink-targets', 'csv', scopeSlug));
 }
 
 export function exportActionPlanMD(
   keywords: KeywordRecord[],
   backlinks: BacklinkRecord[],
-  competitors: CompetitorPageRecord[]
+  competitors: CompetitorPageRecord[],
+  scopeLabel = 'All Projects',
+  scopeSlug?: string
 ): void {
   const date = new Date().toLocaleDateString();
   const topKw = [...keywords]
@@ -98,10 +112,12 @@ export function exportActionPlanMD(
   const lines: string[] = [
     `# SERPVault Action Plan — ${date}`,
     '',
+    `**Export Scope:** ${scopeLabel}`,
+    '',
     '## Top Keyword Opportunities',
     '',
-    '| Keyword | Volume | Difficulty | Intent | Tag | Score |',
-    '|---------|--------|------------|--------|-----|-------|',
+    '| Keyword | Monthly Search Volume | Difficulty | Intent | Tag | Score |',
+    '|---------|-----------------------|------------|--------|-----|-------|',
     ...topKw.map(
       (r) =>
         `| ${r.keyword} | ${r.volume ?? '-'} | ${r.difficulty ?? '-'} | ${r.intent ?? '-'} | ${r.tag ?? '-'} | ${r.opportunityScore ?? '-'} |`
@@ -123,7 +139,7 @@ export function exportActionPlanMD(
     ...topComp.map((r) => `| ${r.url} | ${r.traffic ?? '-'} | ${r.keywords ?? '-'} |`),
   ];
 
-  download(lines.join('\n'), 'serpvault-action-plan.md', 'text/markdown');
+  download(lines.join('\n'), scopedFilename('serpvault-action-plan', 'md', scopeSlug), 'text/markdown');
 }
 
 function getHermesField(raw: Record<string, string>, ...keys: string[]): string {
@@ -134,7 +150,7 @@ function getHermesField(raw: Record<string, string>, ...keys: string[]): string 
   return '-';
 }
 
-export function exportHermesContentPlanCSV(rows: KeywordRecord[]): void {
+export function exportHermesContentPlanCSV(rows: KeywordRecord[], scopeSlug?: string): void {
   const hermesRows = rows.filter((k) => {
     const r = k.raw || {};
     return !!(r.cluster || r.Cluster || r['Cluster'] || r.page_target || r['page target'] || r.pageTarget);
@@ -155,26 +171,40 @@ export function exportHermesContentPlanCSV(rows: KeywordRecord[]): void {
   });
   if (data.length === 0) {
     // still download empty? or handled in UI; per task, empty state in page
-    download('keyword,cluster,page_target,priority,serpvault_tag,intent,domain,location,niche\n', 'hermes-content-plan.csv');
+    download('keyword,cluster,page_target,priority,serpvault_tag,intent,domain,location,niche\n', scopedFilename('hermes-content-plan', 'csv', scopeSlug));
     return;
   }
-  download(toCSV(data), 'hermes-content-plan.csv');
+  download(toCSV(data), scopedFilename('hermes-content-plan', 'csv', scopeSlug));
 }
 
-export function exportHermesContentPlanMD(rows: KeywordRecord[]): void {
+interface HermesGroupMeta {
+  priority: string;
+  serpvault_tag: string;
+  intent: string;
+  domain: string;
+  location: string;
+  niche: string;
+}
+
+interface HermesPageTargetGroup {
+  meta: HermesGroupMeta;
+  keywords: KeywordRecord[];
+}
+
+export function exportHermesContentPlanMD(rows: KeywordRecord[], scopeLabel = 'All Projects', scopeSlug?: string): void {
   const hermesRows = rows.filter((k) => {
     const r = k.raw || {};
     return !!(r.cluster || r.Cluster || r['Cluster'] || r.page_target || r['page target'] || r.pageTarget);
   });
   const date = new Date().toLocaleDateString();
   if (hermesRows.length === 0) {
-    const md = `# Hermes Content Plan — ${date}\n\nNo Hermes keyword data found. Upload a Hermes keyword_report CSV with cluster/page_target fields.`;
-    download(md, 'hermes-content-plan.md', 'text/markdown');
+    const md = `# Hermes Content Plan — ${date}\n\n**Export Scope:** ${scopeLabel}\n\nNo Hermes keyword data found. Upload a Hermes keyword_report CSV with cluster/page_target fields.`;
+    download(md, scopedFilename('hermes-content-plan', 'md', scopeSlug), 'text/markdown');
     return;
   }
 
   // Group by cluster -> page_target (mirrors keywords page groupedPlanner)
-  const clusterMap = new Map<string, Map<string, { meta: any; keywords: KeywordRecord[] }>>();
+  const clusterMap = new Map<string, Map<string, HermesPageTargetGroup>>();
   for (const row of hermesRows) {
     const r = row.raw || {};
     const cluster = getHermesField(r, 'cluster', 'Cluster', 'CLUSTER');
@@ -200,6 +230,8 @@ export function exportHermesContentPlanMD(rows: KeywordRecord[]): void {
   const lines: string[] = [
     `# Hermes Content Plan — ${date}`,
     '',
+    `**Export Scope:** ${scopeLabel}`,
+    '',
   ];
   for (const [cluster, ptMap] of clusterMap.entries()) {
     const total = Array.from(ptMap.values()).reduce((s, g) => s + g.keywords.length, 0);
@@ -217,12 +249,265 @@ export function exportHermesContentPlanMD(rows: KeywordRecord[]): void {
       lines.push('');
       lines.push('**Keywords:**');
       for (const k of keywords) {
-        const vol = k.volume != null ? ` (${k.volume.toLocaleString()})` : '';
+        const vol = k.volume != null ? ` (Monthly Search Volume: ${k.volume.toLocaleString()})` : '';
         lines.push(`- ${k.keyword}${vol}`);
       }
       lines.push('');
     }
   }
 
-  download(lines.join('\n'), 'hermes-content-plan.md', 'text/markdown');
+  download(lines.join('\n'), scopedFilename('hermes-content-plan', 'md', scopeSlug), 'text/markdown');
+}
+
+export function exportWorkflowActionPlanCSV(
+  items: (OpportunityQueueItem & {
+    status: OpportunityWorkflowStatus;
+    owner?: string;
+    dueDate?: string;
+    notes?: string;
+  })[],
+  scopeSlug?: string
+): void {
+  const data = items.map((r) => ({
+    Status: r.status,
+    Type: r.type,
+    Title: r.title,
+    Detail: r.detail,
+    Source: r.sourceLabel,
+    'Recommended Action': r.recommendedAction,
+    Score: r.score,
+    Impact: r.impact,
+    Owner: r.owner ?? '',
+    'Due Date': r.dueDate ?? '',
+    Notes: r.notes ?? '',
+    href: r.href ?? '',
+  }));
+  download(toCSV(data), scopedFilename('serpvault-workflow-action-plan', 'csv', scopeSlug));
+}
+
+function cleanMDCell(val: unknown): string {
+  if (val == null) return '-';
+  const str = String(val).trim();
+  if (str === '') return '-';
+  return str.replace(/\|/g, '\\|').replace(/\s+/g, ' ');
+}
+
+export function exportWorkflowActionPlanMD(
+  items: (OpportunityQueueItem & {
+    status: OpportunityWorkflowStatus;
+    owner?: string;
+    dueDate?: string;
+    notes?: string;
+  })[],
+  scopeLabel = 'All Projects',
+  scopeSlug?: string
+): void {
+  const date = new Date().toLocaleDateString();
+  const lines: string[] = [
+    `# SERPVault Workflow Action Plan — ${date}`,
+    '',
+    `**Export Scope:** ${scopeLabel}`,
+    '',
+    '| Status | Type | Title | Detail | Source | Recommended Action | Score | Impact | Owner | Due Date | Notes | Link |',
+    '|--------|------|-------|--------|--------|--------------------|-------|--------|-------|----------|-------|------|',
+    ...items.map(
+      (r) =>
+        `| ${cleanMDCell(r.status)} | ${cleanMDCell(r.type)} | ${cleanMDCell(r.title)} | ${cleanMDCell(r.detail)} | ${cleanMDCell(r.sourceLabel)} | ${cleanMDCell(r.recommendedAction)} | ${cleanMDCell(r.score)} | ${cleanMDCell(r.impact)} | ${cleanMDCell(r.owner)} | ${cleanMDCell(r.dueDate)} | ${cleanMDCell(r.notes)} | ${r.href ? `[View](${r.href})` : '-'} |`
+    ),
+  ];
+
+  download(lines.join('\n'), scopedFilename('serpvault-workflow-action-plan', 'md', scopeSlug), 'text/markdown');
+}
+
+export function exportContentBriefPackMD(
+  briefs: ContentBrief[],
+  scopeLabel = 'All Projects',
+  scopeSlug?: string,
+  workflowMap?: Record<string, ContentBriefWorkflowItem>
+): void {
+  const date = new Date().toLocaleDateString();
+  const lines: string[] = [
+    `# Content Brief Pack — ${date}`,
+    '',
+    `**Export Scope:** ${scopeLabel}`,
+    `**Total Briefs:** ${briefs.length}`,
+    '',
+    '## Table of Contents',
+    '',
+  ];
+
+  if (briefs.length === 0) {
+    lines.push('_No content briefs available to export. Ensure keywords or content opportunities are tagged first._');
+  } else {
+    briefs.forEach((brief, idx) => {
+      const status = workflowMap?.[brief.id]?.status;
+      const statusStr = status ? ` | Status: ${status}` : '';
+      lines.push(`${idx + 1}. [${brief.title}](#brief-${brief.id}) (${brief.suggestedContentType} | Monthly Search Volume: ${brief.monthlyVolumeTotal?.toLocaleString() ?? 0} | Difficulty: ${brief.avgDifficulty}/100${statusStr})`);
+    });
+
+    lines.push('', '---', '');
+
+    briefs.forEach((brief, idx) => {
+      lines.push(`<a name="brief-${brief.id}"></a>`);
+      const wfItem = workflowMap?.[brief.id];
+      if (wfItem) {
+        lines.push(generateContentBriefMarkdownWithWorkflow(brief, wfItem));
+      } else {
+        lines.push(generateContentBriefMarkdown(brief));
+      }
+      if (idx < briefs.length - 1) {
+        lines.push('', '---', '');
+      }
+    });
+  }
+
+  download(lines.join('\n'), scopedFilename('serpvault-content-brief-pack', 'md', scopeSlug), 'text/markdown');
+}
+
+export function exportCompetitiveIntelMD(
+  summaries: CompetitorSummary[],
+  scopeLabel = 'All Projects',
+  scopeSlug?: string
+): void {
+  const date = new Date().toLocaleDateString();
+  const sorted = [...summaries].sort((a, b) => b.opportunityScore - a.opportunityScore);
+
+  const lines: string[] = [
+    `# SERPVault Competitive Intelligence Report — ${date}`,
+    '',
+    `**Export Scope:** ${scopeLabel}`,
+    `**Total Competitor Domains Analyzed:** ${summaries.length}`,
+    '',
+    '## Competitor Domain Summaries',
+    '',
+    '| Competitor Domain | Est. Monthly Traffic | Pages Indexed | Content Gaps | Backlink Prospects | Referring Domains | Top Page | Configured? | Opportunity Score |',
+    '|-------------------|----------------------|---------------|--------------|-------------------|-------------------|----------|-------------|-------------------|',
+    ...sorted.map((s) => {
+      const topPage = s.topPageUrl ? `[${s.topPageTitle || s.topPageUrl}](${s.topPageUrl})` : '-';
+      const isConfig = s.isConfigured ? 'Yes' : 'No';
+      return `| ${s.domain} | ${s.estTraffic?.toLocaleString() ?? 0} | ${s.pageCount} | ${s.gapKeywordCount} | ${s.backlinkProspectCount} | ${s.referringDomainCount} | ${topPage} | ${isConfig} | ${s.opportunityScore} / 100 |`;
+    }),
+  ];
+
+  download(lines.join('\n'), scopedFilename('serpvault-competitive-intelligence', 'md', scopeSlug), 'text/markdown');
+}
+
+export interface ExecutiveReportParams {
+  scopeLabel: string;
+  scopeSlug?: string;
+  selectedSite: SiteSelection;
+  counts: {
+    keywords: number;
+    gaps: number;
+    backlinks: number;
+    pages: number;
+    domains: number;
+  };
+  workflowCounts: {
+    planned: number;
+    inProgress: number;
+    done: number;
+  };
+  topOpportunities: OpportunityQueueItem[];
+  topBriefs: ContentBrief[];
+  topCompetitors: CompetitorSummary[];
+  contentBriefWorkflowMap?: Record<string, ContentBriefWorkflowItem>;
+}
+
+export function exportExecutiveStrategyReportMD(
+  params: ExecutiveReportParams
+): void {
+  const date = new Date().toLocaleDateString();
+  const {
+    scopeLabel,
+    scopeSlug,
+    selectedSite,
+    counts,
+    workflowCounts,
+    topOpportunities,
+    topBriefs,
+    topCompetitors,
+    contentBriefWorkflowMap = {},
+  } = params;
+
+  // Pre-calculate content brief workflow stats
+  let draftCount = 0;
+  let inReviewCount = 0;
+  let approvedCount = 0;
+  let publishedCount = 0;
+  let archivedCount = 0;
+
+  topBriefs.forEach((b) => {
+    const status = contentBriefWorkflowMap[b.id]?.status || 'Draft';
+    if (status === 'Draft') draftCount++;
+    else if (status === 'In Review') inReviewCount++;
+    else if (status === 'Approved') approvedCount++;
+    else if (status === 'Published') publishedCount++;
+    else if (status === 'Archived') archivedCount++;
+  });
+
+  const lines: string[] = [
+    `# SERPVault Executive SEO Strategy Report`,
+    `*Generated on ${date}*`,
+    '',
+    '## 1. Executive Summary & Scope',
+    `- **Project / Site Name:** ${scopeLabel}`,
+    `- **Target Domain:** ${selectedSite?.domain || 'All Projects'}`,
+    `- **Target Location/Database:** ${selectedSite?.location || '-'}`,
+    `- **Niche Focus:** ${selectedSite?.niche || '-'}`,
+    '',
+    '## 2. SEO Dataset Overview',
+    'Below is a summary of the data imported and analyzed for this project scope:',
+    '',
+    `| Dataset | Count | Description |`,
+    `|---------|-------|-------------|`,
+    `| **Keywords** | ${counts.keywords.toLocaleString()} | Total monitored keywords |`,
+    `| **Keyword Gaps** | ${counts.gaps.toLocaleString()} | Keyword opportunities where competitors rank higher |`,
+    `| **Backlink Opportunities** | ${counts.backlinks.toLocaleString()} | Competitor backlink pages |`,
+    `| **Competitor Pages** | ${counts.pages.toLocaleString()} | High-performing competitor URLs |`,
+    `| **Referring Domains** | ${counts.domains.toLocaleString()} | Domains linking to competitors |`,
+    '',
+    '## 3. Workflow Status Summary',
+    'Status of the identified SEO deliverables and tasks:',
+    `- **Planned Opportunities:** ${workflowCounts.planned}`,
+    `- **In-Progress Tasks:** ${workflowCounts.inProgress}`,
+    `- **Completed Deliverables:** ${workflowCounts.done}`,
+    '',
+    '### Content Brief Editorial Pipeline Summary',
+    `- **Draft:** ${draftCount}`,
+    `- **In Review:** ${inReviewCount}`,
+    `- **Approved:** ${approvedCount}`,
+    `- **Published:** ${publishedCount}`,
+    `- **Archived:** ${archivedCount}`,
+    '',
+    '## 4. Top 10 Priority SEO Opportunities',
+    'The highest-value keyword and link opportunities currently in scope:',
+    '',
+    '| Rank | Type | Title | Opportunity Details | Opportunity Score |',
+    '|------|------|-------|---------------------|-------------------|',
+    ...topOpportunities.slice(0, 10).map((opt, idx) => {
+      return `| ${idx + 1} | ${opt.type.toUpperCase()} | ${opt.title} | ${cleanMDCell(opt.detail)} | ${opt.score} / 100 |`;
+    }),
+    '',
+    '## 5. Top Content Briefs',
+    'Prioritized content structure recommendations based on keyword clusters:',
+    '',
+    '| Brief Title | Suggested URL | Primary Keyword | Monthly Search Volume | Workflow Status | Opportunity Score |',
+    '|-------------|---------------|-----------------|-----------------------|-----------------|-------------------|',
+    ...topBriefs.slice(0, 10).map((brief) => {
+      const status = contentBriefWorkflowMap[brief.id]?.status || 'Draft';
+      return `| ${brief.title} | \`${brief.suggestedUrl}\` | **${brief.primaryKeyword}** | ${brief.monthlyVolumeTotal?.toLocaleString() ?? 0} | ${status} | ${brief.opportunityScore} / 100 |`;
+    }),
+    '',
+    '## 6. Competitive Intelligence Summary',
+    'Top competitors identified in this project scope, ranked by opportunity score:',
+    '',
+    '| Competitor Domain | Est. Monthly Traffic | Pages Indexed | Content Gaps | Link Prospects | Opportunity Score |',
+    '|-------------------|----------------------|---------------|--------------|----------------|-------------------|',
+    ...topCompetitors.slice(0, 10).map((comp) => {
+      return `| ${comp.domain} | ${comp.estTraffic?.toLocaleString() ?? 0} | ${comp.pageCount} | ${comp.gapKeywordCount} | ${comp.backlinkProspectCount + comp.referringDomainCount} | ${comp.opportunityScore} / 100 |`;
+    }),
+  ];
+
+  download(lines.join('\n'), scopedFilename('serpvault-executive-strategy-report', 'md', scopeSlug), 'text/markdown');
 }

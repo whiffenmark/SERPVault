@@ -108,7 +108,8 @@ function scoreColumns(rawHeaders: string[]): Map<ReportType, number> {
     'to url',
     'destination url',
     'target page',
-    'page url (target)'
+    'page url (target)',
+    'link url'
   );
   const hasAnchorText = any(h, 'anchor text', 'anchor and target');
   const hasAnchorAny = any(h, 'anchor');
@@ -123,7 +124,7 @@ function scoreColumns(rawHeaders: string[]): Map<ReportType, number> {
     'source domain',
     'ref domain',
     'root domain'
-  );
+  ) && !h.some(hdr => hdr === 'referring domains' || hdr === 'ref domains');
   const hasTargetDomain = any(h, 'target domain', 'destination domain');
   const hasDomainMetric = any(
     h,

@@ -1,6 +1,24 @@
 -- SERPVault Supabase Schema
 -- Run this in your Supabase SQL Editor to create tables
 
+create table if not exists projects (
+  id text primary key,
+  name text not null,
+  domain text not null,
+  location text,
+  niche text,
+  created_at timestamptz default now(),
+  updated_at timestamptz
+);
+
+create table if not exists competitors (
+  id text primary key,
+  project_id text references projects(id) on delete cascade,
+  domain text not null,
+  label text,
+  created_at timestamptz default now()
+);
+
 create table if not exists uploads (
   id text primary key,
   filename text not null,
@@ -8,8 +26,14 @@ create table if not exists uploads (
   uploaded_at timestamptz default now(),
   row_count integer default 0,
   cleaned_row_count integer default 0,
-  dedupe_report_id text
+  dedupe_report_id text,
+  project_id text references projects(id),
+  source_tool text
 );
+
+alter table uploads add column if not exists project_id text references projects(id);
+alter table uploads add column if not exists source_tool text;
+
 
 create table if not exists keywords (
   id text primary key,
@@ -115,7 +139,12 @@ create table if not exists dedupe_reports (
 -- Disable Row Level Security for personal use.
 -- This allows the publishable key to read/write all tables freely.
 -- If you add Supabase Auth later, re-enable RLS and add user-scoped policies.
+-- NOTE: For production environments, refer to migrations under supabase/migrations/,
+-- specifically 20260701000000_auth_rls_foundation.sql which enables RLS, adds
+-- user_id fields/indexes, and configures user-scoped access policies.
 -- ---------------------------------------------------------------------------
+alter table projects disable row level security;
+alter table competitors disable row level security;
 alter table uploads disable row level security;
 alter table keywords disable row level security;
 alter table keyword_gaps disable row level security;
@@ -124,3 +153,60 @@ alter table backlinks disable row level security;
 alter table referring_domains disable row level security;
 alter table anchor_texts disable row level security;
 alter table dedupe_reports disable row level security;
+
+create table if not exists user_settings (
+  user_id uuid,
+  key text,
+  value jsonb,
+  created_at timestamptz default now(),
+  updated_at timestamptz,
+  primary key (user_id, key)
+);
+
+alter table user_settings disable row level security;
+
+create table if not exists opportunity_workflow_items (
+  user_id uuid,
+  opportunity_id text,
+  status text check (status in ('New', 'Planned', 'In Progress', 'Done', 'Ignored')),
+  project_id text,
+  metadata jsonb default '{}',
+  created_at timestamptz default now(),
+  updated_at timestamptz,
+  primary key (user_id, opportunity_id)
+);
+
+alter table opportunity_workflow_items disable row level security;
+
+create table if not exists content_brief_workflows (
+  user_id uuid,
+  brief_id text,
+  status text check (status in ('Draft', 'In Review', 'Approved', 'Published', 'Archived')),
+  owner text,
+  due_date text,
+  notes text,
+  checked_items jsonb default '{}',
+  created_at timestamptz default now(),
+  updated_at timestamptz,
+  primary key (user_id, brief_id)
+);
+alter table content_brief_workflows disable row level security;
+
+create table if not exists upload_audit_logs (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid,
+  upload_id text,
+  filename text,
+  report_type text,
+  project_id text,
+  source_tool text,
+  row_count integer,
+  cleaned_row_count integer,
+  duplicates_removed integer,
+  dedupe_rate numeric,
+  dedupe_report_id text,
+  event_type text default 'import',
+  created_at timestamptz default now(),
+  metadata jsonb default '{}'
+);
+alter table upload_audit_logs disable row level security;

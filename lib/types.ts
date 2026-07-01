@@ -24,6 +24,26 @@ export interface UploadRecord {
   rowCount: number;
   cleanedRowCount: number;
   dedupeReportId: string;
+  projectId?: string;
+  sourceTool?: string;
+}
+
+export interface ProjectRecord {
+  id: string;
+  name: string;
+  domain: string;
+  location?: string;
+  niche?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface CompetitorRecord {
+  id: string;
+  projectId: string;
+  domain: string;
+  label?: string;
+  createdAt?: string;
 }
 
 export interface KeywordRecord {
@@ -157,4 +177,6 @@ export interface AppStore {
   referringDomains: ReferringDomainRecord[];
   anchorTexts: AnchorTextRecord[];
   dedupeReports: DedupeReport[];
+  projects: ProjectRecord[];
+  competitors: CompetitorRecord[];
 }
