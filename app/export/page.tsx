@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, type ReactNode } from 'react';
 import * as db from '@/lib/db';
+import { getContentBriefWorkflowMap, type ContentBriefWorkflowItem } from '@/lib/content-brief-workflow';
 import {
   filterRowsBySite,
   getSelectedSite,
@@ -51,6 +52,22 @@ import type {
   DedupeReport,
 } from '@/lib/types';
 
+type ExportCardConfig = {
+  id: string;
+  title: string;
+  icon: string;
+  description: string;
+  count: string;
+  action: () => void;
+  extraContent?: ReactNode;
+};
+
+type ExportSectionConfig = {
+  title: string;
+  description: string;
+  cards: ExportCardConfig[];
+};
+
 export default function ExportPage() {
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState('');
@@ -69,6 +86,7 @@ export default function ExportPage() {
   const [dedupeReports, setDedupeReports] = useState<DedupeReport[]>([]);
   const [workflowMap, setWorkflowMap] = useState<Record<string, OpportunityWorkflowStatus>>({});
   const [metadataMap, setMetadataMap] = useState<Record<string, ActionPlanItemMetadata>>({});
+  const [contentBriefWorkflowMap, setContentBriefWorkflowMap] = useState<Record<string, ContentBriefWorkflowItem>>({});
   const [loading, setLoading] = useState(true);
   const [history, setHistory] = useState<ExportHistoryItem[]>([]);
 
@@ -81,6 +99,9 @@ export default function ExportPage() {
 
     const mMap = getActionPlanMetadataMap();
     setMetadataMap(mMap);
+
+    const cbwMap = getContentBriefWorkflowMap();
+    setContentBriefWorkflowMap(cbwMap);
 
     setHistory(getExportHistory());
 
@@ -112,6 +133,7 @@ export default function ExportPage() {
 
     const unsubscribe = subscribeProjectScopeChange(() => {
       setSelectedSiteState(getSelectedSite());
+      setContentBriefWorkflowMap(getContentBriefWorkflowMap());
     });
     return () => unsubscribe();
   }, []);
@@ -210,6 +232,25 @@ export default function ExportPage() {
     return buildContentBriefs(scopedKeywords, scopedKeywordGaps, scopedCompetitorPages, scopedBacklinks);
   }, [scopedKeywords, scopedKeywordGaps, scopedCompetitorPages, scopedBacklinks]);
 
+  const contentBriefWorkflowCounts = useMemo(() => {
+    let draft = 0;
+    let inReview = 0;
+    let approved = 0;
+    let published = 0;
+    let archived = 0;
+
+    briefs.forEach((b) => {
+      const status = contentBriefWorkflowMap[b.id]?.status || 'Draft';
+      if (status === 'Draft') draft++;
+      else if (status === 'In Review') inReview++;
+      else if (status === 'Approved') approved++;
+      else if (status === 'Published') published++;
+      else if (status === 'Archived') archived++;
+    });
+
+    return { draft, inReview, approved, published, archived };
+  }, [briefs, contentBriefWorkflowMap]);
+
   const competitorSummaries = useMemo(() => {
     return getCompetitorDomainSummaries({
       competitorPages: scopedCompetitorPages,
@@ -277,7 +318,7 @@ export default function ExportPage() {
   };
 
   // Organized deliverables
-  const sections = [
+  const sections: ExportSectionConfig[] = [
     {
       title: 'Executive Strategy & Client Reports',
       description: 'High-level strategy documents and summaries structured for client presentations and campaign updates.',
@@ -305,6 +346,7 @@ export default function ExportPage() {
               topOpportunities: queue,
               topBriefs: briefs,
               topCompetitors: competitorSummaries,
+              contentBriefWorkflowMap,
             }),
             'Executive SEO Strategy Report',
             'Executive Strategy & Client Reports',
@@ -349,14 +391,35 @@ export default function ExportPage() {
           id: 'briefs',
           title: 'Content Brief Pack',
           icon: '📦',
-          description: 'Combines all generated keyword cluster content briefs into a single Markdown file, complete with outlines, SEO checklists, and a table of contents.',
-          count: loading ? 'Calculating...' : `${briefs.length} briefs ready for content writers`,
+          description: 'Combines all generated keyword cluster content briefs into a single Markdown file, complete with outlines, SEO checklists, table of contents, and persistent workflow metadata.',
+          count: loading ? 'Calculating...' : `${briefs.length} briefs ready (workflow metadata included)`,
+          extraContent: !loading && (
+            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+              <span style={{ fontSize: '0.7rem', padding: '0.1rem 0.35rem', borderRadius: '4px', background: 'rgba(100, 116, 139, 0.1)', color: 'var(--muted)', border: '1px solid rgba(100, 116, 139, 0.2)' }}>
+                Draft: {contentBriefWorkflowCounts.draft}
+              </span>
+              <span style={{ fontSize: '0.7rem', padding: '0.1rem 0.35rem', borderRadius: '4px', background: 'rgba(245, 158, 11, 0.1)', color: 'var(--warning)', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
+                In Review: {contentBriefWorkflowCounts.inReview}
+              </span>
+              <span style={{ fontSize: '0.7rem', padding: '0.1rem 0.35rem', borderRadius: '4px', background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
+                Approved: {contentBriefWorkflowCounts.approved}
+              </span>
+              <span style={{ fontSize: '0.7rem', padding: '0.1rem 0.35rem', borderRadius: '4px', background: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                Published: {contentBriefWorkflowCounts.published}
+              </span>
+              {contentBriefWorkflowCounts.archived > 0 && (
+                <span style={{ fontSize: '0.7rem', padding: '0.1rem 0.35rem', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.1)', color: 'rgba(239, 68, 68, 0.8)', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                  Archived: {contentBriefWorkflowCounts.archived}
+                </span>
+              )}
+            </div>
+          ),
           action: () => run(
             'briefs',
-            () => exportContentBriefPackMD(briefs, scopeLabel, scopeSlug),
+            () => exportContentBriefPackMD(briefs, scopeLabel, scopeSlug, contentBriefWorkflowMap),
             'Content Brief Pack',
             'Execution & Team Deliverables',
-            loading ? 'Calculating...' : `${briefs.length} briefs ready for content writers`
+            loading ? 'Calculating...' : `${briefs.length} briefs ready (workflow metadata included)`
           ),
         },
         {
@@ -541,6 +604,11 @@ export default function ExportPage() {
                       <div style={{ fontSize: '0.82rem', color: 'var(--muted)', lineHeight: '1.4' }}>
                         {card.description}
                       </div>
+                      {card.extraContent && (
+                        <div style={{ marginTop: '0.4rem' }}>
+                          {card.extraContent}
+                        </div>
+                      )}
                       <div style={{ fontSize: '0.72rem', color: 'var(--accent)', marginTop: '0.4rem', fontWeight: 700 }}>
                         {card.count}
                       </div>

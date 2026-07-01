@@ -1,5 +1,4 @@
 import type { KeywordRecord, KeywordGapRecord, CompetitorPageRecord, BacklinkRecord, Tag } from './types';
-import { nanoid } from './nanoid';
 
 export interface ContentBrief {
   id: string;
@@ -50,6 +49,17 @@ function slugify(text: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)+/g, '');
+}
+
+function generateStableId(value: string): string {
+  let hash = 0;
+  for (let i = 0; i < value.length; i++) {
+    const char = value.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash |= 0;
+  }
+  const cleanVal = value.replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase().slice(0, 30);
+  return `cb_${cleanVal}_${Math.abs(hash)}`;
 }
 
 function calculateIntentMix(keywords: (KeywordRecord | KeywordGapRecord)[]): Record<string, number> {
@@ -269,7 +279,7 @@ export function buildContentBriefs(
       }
 
       return {
-        id: nanoid(),
+        id: generateStableId(groupKey),
         title: g.title,
         suggestedUrl: g.title.startsWith('/') || g.title.startsWith('http') ? g.title : `/${slugify(g.title)}`,
         cluster: g.cluster,
@@ -382,7 +392,7 @@ export function buildContentBriefs(
       }
 
       briefs.push({
-        id: nanoid(),
+        id: generateStableId(`fallback:${primary}`),
         title: primary,
         suggestedUrl: `/${slugify(primary)}`,
         cluster: seed.tag || 'General',

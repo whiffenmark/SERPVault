@@ -9,6 +9,15 @@ import type { KeywordRecord, KeywordGapRecord, CompetitorPageRecord, BacklinkRec
 import Card from '@/components/Card';
 import ScoreBadge from '@/components/ScoreBadge';
 import { buildContentBriefs, generateContentBriefMarkdown, type ContentBrief } from '@/lib/content-briefs';
+import {
+  getContentBriefWorkflowMap,
+  updateContentBriefWorkflowItem,
+  generateContentBriefMarkdownWithWorkflow,
+  WORKFLOW_STATUSES,
+  STATUS_COLORS,
+  type ContentBriefWorkflowStatus,
+  type ContentBriefWorkflowItem
+} from '@/lib/content-brief-workflow';
 
 export default function ContentBriefsPage() {
   const [loading, setLoading] = useState(true);
@@ -28,8 +37,9 @@ export default function ContentBriefsPage() {
   const [copyStatus, setCopyStatus] = useState<'idle' | 'success' | 'failure'>('idle');
   const [focusedBriefId, setFocusedBriefId] = useState<string | null>(null);
 
-  // Checkbox state for each brief: Record<briefId, Record<checkboxIndex, isChecked>>
-  const [checklistState, setChecklistState] = useState<Record<string, Record<number, boolean>>>({});
+  // Workflow state map & filter
+  const [workflowMap, setWorkflowMap] = useState<Record<string, ContentBriefWorkflowItem>>({});
+  const [workflowStatusFilter, setWorkflowStatusFilter] = useState<string>('All');
 
   useEffect(() => {
     // Read site scope
@@ -48,6 +58,7 @@ export default function ContentBriefsPage() {
         setKeywordGaps(gaps);
         setCompetitorPages(comps);
         setBacklinks(bls);
+        setWorkflowMap(getContentBriefWorkflowMap());
       })
       .catch((err) => {
         console.error('Failed to load data for content briefs:', err);
@@ -111,9 +122,13 @@ export default function ContentBriefsPage() {
       const matchesIntent =
         intentFilter === 'All' || (b.intentMix[intentFilter] !== undefined && b.intentMix[intentFilter] > 0);
 
-      return matchesSearch && matchesType && matchesPriority && matchesIntent;
+      // Workflow status filter
+      const status = workflowMap[b.id]?.status || 'Draft';
+      const matchesWorkflowStatus = workflowStatusFilter === 'All' || status === workflowStatusFilter;
+
+      return matchesSearch && matchesType && matchesPriority && matchesIntent && matchesWorkflowStatus;
     });
-  }, [allBriefs, searchQuery, contentTypeFilter, priorityFilter, intentFilter]);
+  }, [allBriefs, searchQuery, contentTypeFilter, priorityFilter, intentFilter, workflowMap, workflowStatusFilter]);
 
   // Auto-select the first brief when list changes or if current selection is invalid
   const selectedBrief = useMemo(() => {
@@ -136,6 +151,17 @@ export default function ContentBriefsPage() {
     const missingTargets = allBriefs.filter((b) => !b.hasPageTarget).length;
     const withComps = allBriefs.filter((b) => b.competitorReferences.length > 0).length;
 
+    let inReviewCount = 0;
+    let approvedCount = 0;
+    let publishedCount = 0;
+
+    allBriefs.forEach((b) => {
+      const status = workflowMap[b.id]?.status || 'Draft';
+      if (status === 'In Review') inReviewCount++;
+      else if (status === 'Approved') approvedCount++;
+      else if (status === 'Published') publishedCount++;
+    });
+
     return {
       totalBriefs,
       totalVol,
@@ -143,8 +169,11 @@ export default function ContentBriefsPage() {
       highPrioCount,
       missingTargets,
       withComps,
+      inReviewCount,
+      approvedCount,
+      publishedCount,
     };
-  }, [allBriefs]);
+  }, [allBriefs, workflowMap]);
 
   // Reset all filters helper
   const handleResetFilters = () => {
@@ -152,11 +181,13 @@ export default function ContentBriefsPage() {
     setContentTypeFilter('All');
     setPriorityFilter('All');
     setIntentFilter('All');
+    setWorkflowStatusFilter('All');
   };
 
   // Copy Markdown for selected brief to clipboard
   const handleCopyMarkdown = (brief: ContentBrief) => {
-    const md = generateContentBriefMarkdown(brief);
+    const wfItem = workflowMap[brief.id];
+    const md = generateContentBriefMarkdownWithWorkflow(brief, wfItem);
 
     const fallbackCopy = (text: string) => {
       const textarea = document.createElement('textarea');
@@ -204,7 +235,8 @@ export default function ContentBriefsPage() {
 
   // Download Markdown file for selected brief
   const handleDownloadMarkdown = (brief: ContentBrief) => {
-    const md = generateContentBriefMarkdown(brief);
+    const wfItem = workflowMap[brief.id];
+    const md = generateContentBriefMarkdownWithWorkflow(brief, wfItem);
     const blob = new Blob([md], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -282,6 +314,9 @@ export default function ContentBriefsPage() {
         <Card title="Total Monthly Volume" value={stats.totalVol} sub="cumulative monthly search volume" />
         <Card title="Avg Difficulty" value={stats.avgDiff} sub="average keyword KD" accent />
         <Card title="High Priority" value={stats.highPrioCount} sub="opportunity score >= 70" accent />
+        <Card title="In Review" value={stats.inReviewCount} sub="briefs undergoing review" accent />
+        <Card title="Approved" value={stats.approvedCount} sub="briefs approved for writers" />
+        <Card title="Published" value={stats.publishedCount} sub="completed and live page briefs" />
         <Card title="Missing Target URL" value={stats.missingTargets} sub="briefs with cluster fallback" />
         <Card title="Competitors Found" value={stats.withComps} sub="matching competitor domains" />
       </div>
@@ -430,12 +465,36 @@ export default function ContentBriefsPage() {
                   </select>
                 </div>
               )}
+
+              {/* Status Select */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>Status:</span>
+                <select
+                  value={workflowStatusFilter}
+                  onChange={(e) => setWorkflowStatusFilter(e.target.value)}
+                  style={{
+                    padding: '0.35rem 0.5rem',
+                    fontSize: '0.8rem',
+                    background: 'var(--background)',
+                    border: '1px solid var(--card-border)',
+                    borderRadius: '6px',
+                    color: 'var(--foreground)',
+                    outline: 'none',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <option value="All">All Statuses</option>
+                  {WORKFLOW_STATUSES.map((status) => (
+                    <option key={status} value={status}>{status}</option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             {/* Clear filters or search counts */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '0.75rem', color: 'var(--muted)' }}>
               <span>Showing {filteredBriefs.length} of {allBriefs.length} briefs</span>
-              {(searchQuery !== '' || contentTypeFilter !== 'All' || priorityFilter !== 'All' || intentFilter !== 'All') && (
+              {(searchQuery !== '' || contentTypeFilter !== 'All' || priorityFilter !== 'All' || intentFilter !== 'All' || workflowStatusFilter !== 'All') && (
                 <button
                   type="button"
                   onClick={handleResetFilters}
@@ -586,22 +645,40 @@ export default function ContentBriefsPage() {
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap',
-                            maxWidth: '210px',
+                            maxWidth: '170px',
                           }} title={brief.title}>
                             {brief.title}
                           </span>
-                          <span style={{
-                            fontSize: '0.68rem',
-                            padding: '0.1rem 0.35rem',
-                            borderRadius: '4px',
-                            fontWeight: 700,
-                            background: `${priorityColor}15`,
-                            color: priorityColor,
-                            border: `1px solid ${priorityColor}30`,
-                            flexShrink: 0,
-                          }}>
-                            {brief.priority}
-                          </span>
+                          <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center', flexShrink: 0 }}>
+                            {(() => {
+                              const status = workflowMap[brief.id]?.status || 'Draft';
+                              const statusColor = STATUS_COLORS[status] || STATUS_COLORS['Draft'];
+                              return (
+                                <span style={{
+                                  fontSize: '0.65rem',
+                                  padding: '0.1rem 0.35rem',
+                                  borderRadius: '4px',
+                                  fontWeight: 700,
+                                  background: statusColor.bg,
+                                  color: statusColor.color,
+                                  border: `1px solid ${statusColor.color}30`,
+                                }}>
+                                  {status}
+                                </span>
+                              );
+                            })()}
+                            <span style={{
+                              fontSize: '0.68rem',
+                              padding: '0.1rem 0.35rem',
+                              borderRadius: '4px',
+                              fontWeight: 700,
+                              background: `${priorityColor}15`,
+                              color: priorityColor,
+                              border: `1px solid ${priorityColor}30`,
+                            }}>
+                              {brief.priority}
+                            </span>
+                          </div>
                         </div>
 
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.72rem', color: 'var(--muted)', width: '100%' }}>
@@ -613,7 +690,20 @@ export default function ContentBriefsPage() {
                           <span style={{ color: 'var(--accent)', fontWeight: 500 }}>
                             {brief.suggestedContentType}
                           </span>
-                          <span style={{ display: 'flex', gap: '0.35rem' }}>
+                          <span style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+                            {(() => {
+                              const checkedCount = workflowMap[brief.id]?.checkedItems
+                                ? Object.values(workflowMap[brief.id].checkedItems!).filter(Boolean).length
+                                : 0;
+                              if (checkedCount > 0) {
+                                return (
+                                  <span style={{ fontSize: '0.65rem', color: 'var(--muted)', background: 'rgba(255,255,255,0.04)', padding: '0.05rem 0.25rem', borderRadius: '3px', border: '1px solid var(--card-border)' }}>
+                                    ✓ {checkedCount}/10
+                                  </span>
+                                );
+                              }
+                              return null;
+                            })()}
                             {!brief.hasPageTarget && (
                               <span style={{ color: 'var(--warning)', background: 'rgba(245,158,11,0.08)', padding: '0.05rem 0.25rem', borderRadius: '3px', fontSize: '0.62rem' }}>
                                 Cluster Fallback
@@ -764,6 +854,168 @@ export default function ContentBriefsPage() {
                   {/* Brief Scrollable Body */}
                   <div style={{ flex: 1, overflowY: 'auto', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
 
+                    {/* Workflow & Editorial Controls section */}
+                    <div style={{ background: 'rgba(99, 102, 241, 0.03)', border: '1px solid var(--card-border)', borderRadius: '8px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--card-border)', paddingBottom: '0.5rem', marginBottom: '0.25rem' }}>
+                        <span style={{ fontWeight: 600, fontSize: '0.8rem', color: 'var(--foreground)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                          Editorial Workflow & Controls
+                        </span>
+                        {workflowMap[selectedBrief.id]?.updatedAt && (
+                          <span style={{ fontSize: '0.7rem', color: 'var(--muted)' }}>
+                            Updated: {new Date(workflowMap[selectedBrief.id].updatedAt!).toLocaleString()}
+                          </span>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
+                        {/* Status Select */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                          <label style={{ fontSize: '0.72rem', color: 'var(--muted)', fontWeight: 500 }}>Workflow Status</label>
+                          <select
+                            value={workflowMap[selectedBrief.id]?.status || 'Draft'}
+                            onChange={(e) => {
+                              const status = e.target.value as ContentBriefWorkflowStatus;
+                              const updatedItem = updateContentBriefWorkflowItem(selectedBrief.id, { status });
+                              setWorkflowMap(prev => ({
+                                ...prev,
+                                [selectedBrief.id]: updatedItem
+                              }));
+                            }}
+                            style={{
+                              padding: '0.4rem 0.5rem',
+                              fontSize: '0.8rem',
+                              background: 'var(--background)',
+                              border: '1px solid var(--card-border)',
+                              borderRadius: '6px',
+                              color: 'var(--foreground)',
+                              outline: 'none',
+                              cursor: 'pointer',
+                              width: '100%',
+                            }}
+                          >
+                            {WORKFLOW_STATUSES.map((status) => (
+                              <option key={status} value={status}>{status}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Owner Input */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                          <label style={{ fontSize: '0.72rem', color: 'var(--muted)', fontWeight: 500 }}>Owner</label>
+                          <input
+                            type="text"
+                            placeholder="Assign owner..."
+                            value={workflowMap[selectedBrief.id]?.owner || ''}
+                            onChange={(e) => {
+                              const owner = e.target.value;
+                              const updatedItem = updateContentBriefWorkflowItem(selectedBrief.id, { owner });
+                              setWorkflowMap(prev => ({
+                                ...prev,
+                                [selectedBrief.id]: updatedItem
+                              }));
+                            }}
+                            style={{
+                              padding: '0.4rem 0.5rem',
+                              fontSize: '0.8rem',
+                              background: 'var(--background)',
+                              border: '1px solid var(--card-border)',
+                              borderRadius: '6px',
+                              color: 'var(--foreground)',
+                              outline: 'none',
+                              width: '100%',
+                            }}
+                          />
+                        </div>
+
+                        {/* Due Date Input */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                          <label style={{ fontSize: '0.72rem', color: 'var(--muted)', fontWeight: 500 }}>Due Date</label>
+                          <input
+                            type="date"
+                            value={workflowMap[selectedBrief.id]?.dueDate || ''}
+                            onChange={(e) => {
+                              const dueDate = e.target.value;
+                              const updatedItem = updateContentBriefWorkflowItem(selectedBrief.id, { dueDate });
+                              setWorkflowMap(prev => ({
+                                ...prev,
+                                [selectedBrief.id]: updatedItem
+                              }));
+                            }}
+                            style={{
+                              padding: '0.4rem 0.5rem',
+                              fontSize: '0.8rem',
+                              background: 'var(--background)',
+                              border: '1px solid var(--card-border)',
+                              borderRadius: '6px',
+                              color: 'var(--foreground)',
+                              outline: 'none',
+                              width: '100%',
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Notes Textarea */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                        <label style={{ fontSize: '0.72rem', color: 'var(--muted)', fontWeight: 500 }}>Editorial Notes</label>
+                        <textarea
+                          placeholder="Add notes for writers/editors..."
+                          value={workflowMap[selectedBrief.id]?.notes || ''}
+                          rows={2}
+                          onChange={(e) => {
+                            const notes = e.target.value;
+                            const updatedItem = updateContentBriefWorkflowItem(selectedBrief.id, { notes });
+                            setWorkflowMap(prev => ({
+                              ...prev,
+                              [selectedBrief.id]: updatedItem
+                            }));
+                          }}
+                          style={{
+                            padding: '0.4rem 0.5rem',
+                            fontSize: '0.8rem',
+                            background: 'var(--background)',
+                            border: '1px solid var(--card-border)',
+                            borderRadius: '6px',
+                            color: 'var(--foreground)',
+                            outline: 'none',
+                            resize: 'vertical',
+                            width: '100%',
+                          }}
+                        />
+                      </div>
+
+                      {/* Quick Archive/Unarchive Action */}
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.25rem' }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const currentStatus = workflowMap[selectedBrief.id]?.status || 'Draft';
+                            const newStatus: ContentBriefWorkflowStatus = currentStatus === 'Archived' ? 'Draft' : 'Archived';
+                            const updatedItem = updateContentBriefWorkflowItem(selectedBrief.id, { status: newStatus });
+                            setWorkflowMap(prev => ({
+                              ...prev,
+                              [selectedBrief.id]: updatedItem
+                            }));
+                          }}
+                          style={{
+                            background: 'transparent',
+                            color: (workflowMap[selectedBrief.id]?.status || 'Draft') === 'Archived' ? 'var(--accent)' : 'var(--danger)',
+                            border: 'none',
+                            padding: '0.25rem 0.5rem',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.25rem'
+                          }}
+                        >
+                          {(workflowMap[selectedBrief.id]?.status || 'Draft') === 'Archived' ? 'Unarchive Brief' : 'Archive Brief'}
+                        </button>
+                      </div>
+                    </div>
+
                     {/* Overview & Metadata section */}
                     <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--card-border)', borderRadius: '8px', padding: '0.85rem' }}>
                       <div style={{ fontWeight: 600, fontSize: '0.8rem', color: 'var(--foreground)', borderBottom: '1px solid var(--card-border)', paddingBottom: '0.35rem', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
@@ -879,7 +1131,7 @@ export default function ContentBriefsPage() {
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
                         {checklistItems.map((text, idx) => {
-                          const isChecked = !!(checklistState[selectedBrief.id]?.[idx]);
+                          const isChecked = !!(workflowMap[selectedBrief.id]?.checkedItems?.[idx]);
                           return (
                             <label key={idx} style={{
                               display: 'flex',
@@ -895,12 +1147,14 @@ export default function ContentBriefsPage() {
                                 type="checkbox"
                                 checked={isChecked}
                                 onChange={(e) => {
-                                  setChecklistState((prev) => ({
+                                  const updatedChecked = {
+                                    ...(workflowMap[selectedBrief.id]?.checkedItems || {}),
+                                    [idx]: e.target.checked,
+                                  };
+                                  const updatedItem = updateContentBriefWorkflowItem(selectedBrief.id, { checkedItems: updatedChecked });
+                                  setWorkflowMap((prev) => ({
                                     ...prev,
-                                    [selectedBrief.id]: {
-                                      ...(prev[selectedBrief.id] || {}),
-                                      [idx]: e.target.checked,
-                                    },
+                                    [selectedBrief.id]: updatedItem,
                                   }));
                                 }}
                                 style={{

@@ -3,6 +3,7 @@ import type { OpportunityQueueItem } from './opportunity-queue';
 import type { OpportunityWorkflowStatus } from './opportunity-workflow';
 import type { ContentBrief } from './content-briefs';
 import { generateContentBriefMarkdown } from './content-briefs';
+import { generateContentBriefMarkdownWithWorkflow, type ContentBriefWorkflowItem } from './content-brief-workflow';
 import type { CompetitorSummary } from './competitive-intelligence';
 import type { SiteSelection } from './storage';
 
@@ -307,7 +308,8 @@ export function exportWorkflowActionPlanMD(
 export function exportContentBriefPackMD(
   briefs: ContentBrief[],
   scopeLabel = 'All Projects',
-  scopeSlug?: string
+  scopeSlug?: string,
+  workflowMap?: Record<string, ContentBriefWorkflowItem>
 ): void {
   const date = new Date().toLocaleDateString();
   const lines: string[] = [
@@ -324,14 +326,21 @@ export function exportContentBriefPackMD(
     lines.push('_No content briefs available to export. Ensure keywords or content opportunities are tagged first._');
   } else {
     briefs.forEach((brief, idx) => {
-      lines.push(`${idx + 1}. [${brief.title}](#brief-${brief.id}) (${brief.suggestedContentType} | Monthly Search Volume: ${brief.monthlyVolumeTotal?.toLocaleString() ?? 0} | Difficulty: ${brief.avgDifficulty}/100)`);
+      const status = workflowMap?.[brief.id]?.status;
+      const statusStr = status ? ` | Status: ${status}` : '';
+      lines.push(`${idx + 1}. [${brief.title}](#brief-${brief.id}) (${brief.suggestedContentType} | Monthly Search Volume: ${brief.monthlyVolumeTotal?.toLocaleString() ?? 0} | Difficulty: ${brief.avgDifficulty}/100${statusStr})`);
     });
 
     lines.push('', '---', '');
 
     briefs.forEach((brief, idx) => {
       lines.push(`<a name="brief-${brief.id}"></a>`);
-      lines.push(generateContentBriefMarkdown(brief));
+      const wfItem = workflowMap?.[brief.id];
+      if (wfItem) {
+        lines.push(generateContentBriefMarkdownWithWorkflow(brief, wfItem));
+      } else {
+        lines.push(generateContentBriefMarkdown(brief));
+      }
       if (idx < briefs.length - 1) {
         lines.push('', '---', '');
       }
@@ -388,6 +397,7 @@ export interface ExecutiveReportParams {
   topOpportunities: OpportunityQueueItem[];
   topBriefs: ContentBrief[];
   topCompetitors: CompetitorSummary[];
+  contentBriefWorkflowMap?: Record<string, ContentBriefWorkflowItem>;
 }
 
 export function exportExecutiveStrategyReportMD(
@@ -403,7 +413,24 @@ export function exportExecutiveStrategyReportMD(
     topOpportunities,
     topBriefs,
     topCompetitors,
+    contentBriefWorkflowMap = {},
   } = params;
+
+  // Pre-calculate content brief workflow stats
+  let draftCount = 0;
+  let inReviewCount = 0;
+  let approvedCount = 0;
+  let publishedCount = 0;
+  let archivedCount = 0;
+
+  topBriefs.forEach((b) => {
+    const status = contentBriefWorkflowMap[b.id]?.status || 'Draft';
+    if (status === 'Draft') draftCount++;
+    else if (status === 'In Review') inReviewCount++;
+    else if (status === 'Approved') approvedCount++;
+    else if (status === 'Published') publishedCount++;
+    else if (status === 'Archived') archivedCount++;
+  });
 
   const lines: string[] = [
     `# SERPVault Executive SEO Strategy Report`,
@@ -432,6 +459,13 @@ export function exportExecutiveStrategyReportMD(
     `- **In-Progress Tasks:** ${workflowCounts.inProgress}`,
     `- **Completed Deliverables:** ${workflowCounts.done}`,
     '',
+    '### Content Brief Editorial Pipeline Summary',
+    `- **Draft:** ${draftCount}`,
+    `- **In Review:** ${inReviewCount}`,
+    `- **Approved:** ${approvedCount}`,
+    `- **Published:** ${publishedCount}`,
+    `- **Archived:** ${archivedCount}`,
+    '',
     '## 4. Top 10 Priority SEO Opportunities',
     'The highest-value keyword and link opportunities currently in scope:',
     '',
@@ -444,10 +478,11 @@ export function exportExecutiveStrategyReportMD(
     '## 5. Top Content Briefs',
     'Prioritized content structure recommendations based on keyword clusters:',
     '',
-    '| Brief Title | Suggested URL | Primary Keyword | Monthly Search Volume | Opportunity Score |',
-    '|-------------|---------------|-----------------|-----------------------|-------------------|',
+    '| Brief Title | Suggested URL | Primary Keyword | Monthly Search Volume | Workflow Status | Opportunity Score |',
+    '|-------------|---------------|-----------------|-----------------------|-----------------|-------------------|',
     ...topBriefs.slice(0, 10).map((brief) => {
-      return `| ${brief.title} | \`${brief.suggestedUrl}\` | **${brief.primaryKeyword}** | ${brief.monthlyVolumeTotal?.toLocaleString() ?? 0} | ${brief.opportunityScore} / 100 |`;
+      const status = contentBriefWorkflowMap[brief.id]?.status || 'Draft';
+      return `| ${brief.title} | \`${brief.suggestedUrl}\` | **${brief.primaryKeyword}** | ${brief.monthlyVolumeTotal?.toLocaleString() ?? 0} | ${status} | ${brief.opportunityScore} / 100 |`;
     }),
     '',
     '## 6. Competitive Intelligence Summary',

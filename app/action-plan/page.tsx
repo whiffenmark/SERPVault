@@ -80,6 +80,11 @@ export default function ActionPlanPage() {
   const [dueFilter, setDueFilter] = useState<'All' | 'Overdue' | 'This Week' | 'No Due Date'>('All');
   const [viewMode, setViewMode] = useState<'Board' | 'Table'>('Board');
 
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
+  const [bulkStatus, setBulkStatus] = useState<OpportunityWorkflowStatus | ''>('');
+  const [bulkOwner, setBulkOwner] = useState<string>('');
+  const [bulkDueDate, setBulkDueDate] = useState<string>('');
+
   useEffect(() => {
     setSelectedSiteState(getSelectedSite());
 
@@ -155,6 +160,22 @@ export default function ActionPlanPage() {
       saveActionPlanMetadataMap(updated);
       return updated;
     });
+  };
+
+  const handleToggleSelect = (id: string) => {
+    setSelectedItemIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleClearSelection = () => {
+    setSelectedItemIds(new Set());
   };
 
   const scopedKeywords = filterRowsBySite(keywords, selectedSite);
@@ -273,6 +294,150 @@ export default function ActionPlanPage() {
       return true;
     });
   }, [actionPlanQueue, typeFilter, statusFilter, dueFilter, todayStr, next7Str]);
+
+  const filteredPlanIds = useMemo(() => new Set(filteredPlan.map(item => item.id)), [filteredPlan]);
+
+  useEffect(() => {
+    setSelectedItemIds((prev) => {
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (filteredPlanIds.has(id)) {
+          next.add(id);
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [filteredPlanIds]);
+
+  const isAllFilteredSelected = useMemo(() => {
+    if (filteredPlan.length === 0) return false;
+    return filteredPlan.every((item) => selectedItemIds.has(item.id));
+  }, [filteredPlan, selectedItemIds]);
+
+  const handleSelectAllToggle = () => {
+    if (isAllFilteredSelected) {
+      setSelectedItemIds((prev) => {
+        const next = new Set(prev);
+        filteredPlan.forEach((item) => next.delete(item.id));
+        return next;
+      });
+    } else {
+      setSelectedItemIds((prev) => {
+        const next = new Set(prev);
+        filteredPlan.forEach((item) => next.add(item.id));
+        return next;
+      });
+    }
+  };
+
+  const selectedStats = useMemo(() => {
+    let totalImpact = 0;
+    let overdueCount = 0;
+    selectedItemIds.forEach((id) => {
+      const item = actionPlanQueue.find((q) => q.id === id);
+      if (item) {
+        totalImpact += item.impact || 0;
+        if (isOverdue(item.dueDate, item.status)) {
+          overdueCount++;
+        }
+      }
+    });
+    return { totalImpact, overdueCount };
+  }, [selectedItemIds, actionPlanQueue, todayStr]);
+
+  const handleApplyBulkActions = () => {
+    if (selectedItemIds.size === 0) return;
+
+    let newWorkflowMap = { ...workflowMap };
+    let newMetadataMap = { ...metadataMap };
+    let hasWorkflowChanges = false;
+    let hasMetadataChanges = false;
+    const now = new Date().toISOString();
+
+    selectedItemIds.forEach((id) => {
+      if (bulkStatus) {
+        newWorkflowMap[id] = bulkStatus;
+        hasWorkflowChanges = true;
+      }
+
+      const patch: Partial<ActionPlanItemMetadata> = {};
+      if (bulkOwner.trim() !== '') {
+        patch.owner = bulkOwner.trim();
+      }
+      if (bulkDueDate !== '') {
+        patch.dueDate = bulkDueDate;
+      }
+
+      if (Object.keys(patch).length > 0) {
+        newMetadataMap[id] = {
+          ...(newMetadataMap[id] || {}),
+          ...patch,
+          updatedAt: now,
+        };
+        hasMetadataChanges = true;
+      }
+    });
+
+    if (hasWorkflowChanges) {
+      setWorkflowMap(newWorkflowMap);
+      saveOpportunityWorkflowMap(newWorkflowMap);
+    }
+    if (hasMetadataChanges) {
+      setMetadataMap(newMetadataMap);
+      saveActionPlanMetadataMap(newMetadataMap);
+    }
+
+    setBulkStatus('');
+    setBulkOwner('');
+    setBulkDueDate('');
+    setSelectedItemIds(new Set());
+  };
+
+  const handleBulkMarkDone = () => {
+    if (selectedItemIds.size === 0) return;
+
+    const newWorkflowMap = { ...workflowMap };
+    let newMetadataMap = { ...metadataMap };
+    let hasMetadataChanges = false;
+    const now = new Date().toISOString();
+
+    selectedItemIds.forEach((id) => {
+      newWorkflowMap[id] = 'Done';
+
+      const patch: Partial<ActionPlanItemMetadata> = {};
+      if (bulkOwner.trim() !== '') {
+        patch.owner = bulkOwner.trim();
+      }
+      if (bulkDueDate !== '') {
+        patch.dueDate = bulkDueDate;
+      }
+
+      if (Object.keys(patch).length > 0) {
+        newMetadataMap[id] = {
+          ...(newMetadataMap[id] || {}),
+          ...patch,
+          updatedAt: now,
+        };
+        hasMetadataChanges = true;
+      }
+    });
+
+    setWorkflowMap(newWorkflowMap);
+    saveOpportunityWorkflowMap(newWorkflowMap);
+
+    if (hasMetadataChanges) {
+      setMetadataMap(newMetadataMap);
+      saveActionPlanMetadataMap(newMetadataMap);
+    }
+
+    setBulkStatus('');
+    setBulkOwner('');
+    setBulkDueDate('');
+    setSelectedItemIds(new Set());
+  };
 
   const counts = useMemo(() => {
     const planned = actionPlanQueue.filter((item) => item.status === 'Planned').length;
@@ -653,6 +818,76 @@ export default function ActionPlanPage() {
           </div>
         </div>
 
+        {/* Selection Helper Header */}
+        {filteredPlan.length > 0 && (
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '1rem',
+            padding: '0.5rem 0.75rem',
+            background: 'rgba(255, 255, 255, 0.01)',
+            border: '1px dashed var(--card-border)',
+            borderRadius: '6px',
+            fontSize: '0.8rem',
+          }}>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={handleSelectAllToggle}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid var(--card-border)',
+                  color: 'var(--foreground)',
+                  padding: '0.25rem 0.6rem',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--accent)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--card-border)';
+                }}
+              >
+                {isAllFilteredSelected ? 'Deselect All Visible' : `Select All Visible (${filteredPlan.length})`}
+              </button>
+              {selectedItemIds.size > 0 && (
+                <button
+                  type="button"
+                  onClick={handleClearSelection}
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid var(--card-border)',
+                    color: 'var(--muted)',
+                    padding: '0.25rem 0.6rem',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '0.75rem',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = 'var(--foreground)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = 'var(--muted)';
+                  }}
+                >
+                  Clear Selection
+                </button>
+              )}
+            </div>
+            {selectedItemIds.size > 0 && (
+              <span style={{ color: 'var(--muted)', fontSize: '0.75rem' }}>
+                <strong style={{ color: 'var(--accent)' }}>{selectedItemIds.size}</strong> selected items
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Empty state for filters */}
         {filteredPlan.length === 0 ? (
           <div style={{ padding: '3.5rem 2rem', textAlign: 'center', background: 'rgba(255,255,255,0.01)', borderRadius: '8px', border: '1px dashed var(--card-border)' }}>
@@ -802,54 +1037,73 @@ export default function ActionPlanPage() {
                         dateBg = 'rgba(245, 158, 11, 0.05)';
                       }
 
-                      return (
-                        <div
-                          key={item.id}
-                          style={{
-                            background: 'var(--card)',
-                            border: '1px solid var(--card-border)',
-                            borderRadius: '8px',
-                            padding: '0.75rem',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '0.6rem',
-                            transition: 'border-color 0.15s ease',
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.borderColor = 'var(--card-border)';
-                          }}
-                        >
-                          {/* Priority, Score, Type and Impact */}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+                        return (
+                          <div
+                            key={item.id}
+                            style={{
+                              background: 'var(--card)',
+                              border: selectedItemIds.has(item.id)
+                                ? '1px solid var(--accent)'
+                                : '1px solid var(--card-border)',
+                              boxShadow: selectedItemIds.has(item.id)
+                                ? '0 0 0 1px var(--accent)'
+                                : 'none',
+                              borderRadius: '8px',
+                              padding: '0.75rem',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '0.6rem',
+                              transition: 'all 0.15s ease',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.borderColor = selectedItemIds.has(item.id)
+                                ? 'var(--accent)'
+                                : 'rgba(255, 255, 255, 0.15)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.borderColor = selectedItemIds.has(item.id)
+                                ? 'var(--accent)'
+                                : 'var(--card-border)';
+                            }}
+                          >
+                            {/* Priority, Score, Type and Impact */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={selectedItemIds.has(item.id)}
+                                  onChange={() => handleToggleSelect(item.id)}
+                                  style={{
+                                    cursor: 'pointer',
+                                    width: '14px',
+                                    height: '14px',
+                                  }}
+                                />
+                                <span style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  padding: '0.15rem 0.4rem',
+                                  borderRadius: '4px',
+                                  fontSize: '0.7rem',
+                                  fontWeight: 600,
+                                  color: prioColor,
+                                  background: prioBg,
+                                }}>
+                                  {prioLabel} <span style={{ opacity: 0.8, marginLeft: '0.2rem', fontWeight: 400 }}>({item.score})</span>
+                                </span>
+                                <span style={{ fontSize: '0.7rem', fontWeight: 500, color: 'var(--muted)' }}>
+                                  {impactText}
+                                </span>
+                              </div>
                               <span style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                padding: '0.15rem 0.4rem',
-                                borderRadius: '4px',
                                 fontSize: '0.7rem',
-                                fontWeight: 600,
-                                color: prioColor,
-                                background: prioBg,
+                                fontWeight: 700,
+                                textTransform: 'uppercase',
+                                color: item.type === 'content' ? 'var(--accent)' : item.type === 'gap' ? '#38bdf8' : item.type === 'backlink' ? 'var(--success)' : item.type === 'health' ? 'var(--danger)' : 'var(--warning)',
                               }}>
-                                {prioLabel} <span style={{ opacity: 0.8, marginLeft: '0.2rem', fontWeight: 400 }}>({item.score})</span>
-                              </span>
-                              <span style={{ fontSize: '0.7rem', fontWeight: 500, color: 'var(--muted)' }}>
-                                {impactText}
+                                {item.type}
                               </span>
                             </div>
-                            <span style={{
-                              fontSize: '0.7rem',
-                              fontWeight: 700,
-                              textTransform: 'uppercase',
-                              color: item.type === 'content' ? 'var(--accent)' : item.type === 'gap' ? '#38bdf8' : item.type === 'backlink' ? 'var(--success)' : item.type === 'health' ? 'var(--danger)' : 'var(--warning)',
-                            }}>
-                              {item.type}
-                            </span>
-                          </div>
 
                           {/* Title & Detail */}
                           <div>
@@ -1142,6 +1396,14 @@ export default function ActionPlanPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', textAlign: 'left', minWidth: '1100px' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--card-border)', color: 'var(--muted)', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  <th style={{ padding: '0.6rem 0.5rem', width: '40px' }}>
+                    <input
+                      type="checkbox"
+                      checked={isAllFilteredSelected}
+                      onChange={handleSelectAllToggle}
+                      style={{ cursor: 'pointer' }}
+                    />
+                  </th>
                   <th style={{ padding: '0.6rem 0.5rem', width: '100px' }}>Priority</th>
                   <th style={{ padding: '0.6rem 0.5rem', width: '90px' }}>Type</th>
                   <th style={{ padding: '0.6rem 0.5rem', width: '180px' }}>Opportunity</th>
@@ -1182,14 +1444,29 @@ export default function ActionPlanPage() {
                         borderBottom: '1px solid var(--card-border)',
                         verticalAlign: 'middle',
                         transition: 'background-color 0.15s ease',
+                        backgroundColor: selectedItemIds.has(item.id)
+                          ? 'rgba(99, 102, 241, 0.04)'
+                          : 'transparent',
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.01)';
+                        e.currentTarget.style.backgroundColor = selectedItemIds.has(item.id)
+                          ? 'rgba(99, 102, 241, 0.08)'
+                          : 'rgba(255, 255, 255, 0.01)';
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.backgroundColor = 'transparent';
+                        e.currentTarget.style.backgroundColor = selectedItemIds.has(item.id)
+                          ? 'rgba(99, 102, 241, 0.04)'
+                          : 'transparent';
                       }}
                     >
+                      <td style={{ padding: '0.65rem 0.5rem' }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedItemIds.has(item.id)}
+                          onChange={() => handleToggleSelect(item.id)}
+                          style={{ cursor: 'pointer' }}
+                        />
+                      </td>
                       <td style={{ padding: '0.65rem 0.5rem' }}>
                         <span style={{
                           display: 'inline-flex',
@@ -1396,6 +1673,191 @@ export default function ActionPlanPage() {
           </div>
         )}
       </div>
+
+      {/* Floating Bulk Action Command Bar */}
+      {selectedItemIds.size > 0 && (
+        <>
+          <style dangerouslySetInnerHTML={{__html: `
+            @keyframes slideUp {
+              from { transform: translate(-50%, 100%); opacity: 0; }
+              to { transform: translate(-50%, 0); opacity: 1; }
+            }
+          `}} />
+          <div style={{
+            position: 'fixed',
+            bottom: '2rem',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'var(--card)',
+            border: '2px solid var(--accent)',
+            borderRadius: '12px',
+            padding: '0.75rem 1.5rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '1rem',
+            zIndex: 1000,
+            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.4)',
+            flexWrap: 'wrap',
+            maxWidth: '95%',
+            animation: 'slideUp 0.2s ease-out',
+            color: 'var(--foreground)',
+          }}>
+            {/* Selected count and counters */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', borderRight: '1px solid var(--card-border)', paddingRight: '1.25rem' }}>
+              <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--foreground)' }}>
+                {selectedItemIds.size} Selected
+              </span>
+              {selectedStats.totalImpact > 0 && (
+                <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }} title="Selected Impact">
+                  Impact: <strong style={{ color: 'var(--foreground)' }}>{selectedStats.totalImpact.toLocaleString()}</strong>
+                </span>
+              )}
+              {selectedStats.overdueCount > 0 && (
+                <span style={{ fontSize: '0.75rem', color: 'var(--danger)', fontWeight: 600 }} title="Selected Overdue">
+                  {selectedStats.overdueCount} Overdue
+                </span>
+              )}
+            </div>
+
+            {/* Form Controls */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <select
+                value={bulkStatus}
+                onChange={(e) => setBulkStatus(e.target.value as OpportunityWorkflowStatus | '')}
+                style={{
+                  padding: '0.35rem 0.6rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--card-border)',
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  color: 'var(--foreground)',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  outline: 'none',
+                }}
+              >
+                <option value="" style={{ background: 'var(--card)' }}>Status...</option>
+                <option value="Planned" style={{ background: 'var(--card)' }}>Planned</option>
+                <option value="In Progress" style={{ background: 'var(--card)' }}>In Progress</option>
+                <option value="Done" style={{ background: 'var(--card)' }}>Done</option>
+              </select>
+
+              <input
+                type="text"
+                placeholder="Assign Owner..."
+                value={bulkOwner}
+                onChange={(e) => setBulkOwner(e.target.value)}
+                style={{
+                  padding: '0.35rem 0.6rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--card-border)',
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  color: 'var(--foreground)',
+                  fontSize: '0.75rem',
+                  outline: 'none',
+                  width: '120px',
+                }}
+              />
+
+              <input
+                type="date"
+                value={bulkDueDate}
+                onChange={(e) => setBulkDueDate(e.target.value)}
+                style={{
+                  padding: '0.35rem 0.6rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--card-border)',
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  color: 'var(--foreground)',
+                  fontSize: '0.75rem',
+                  outline: 'none',
+                  cursor: 'pointer',
+                  colorScheme: 'inherit',
+                }}
+              />
+
+              {/* Apply Button */}
+              <button
+                type="button"
+                onClick={handleApplyBulkActions}
+                style={{
+                  background: 'var(--accent)',
+                  color: '#fff',
+                  padding: '0.35rem 0.9rem',
+                  borderRadius: '6px',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  border: 'none',
+                  cursor: 'pointer',
+                  transition: 'background 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'var(--accent-hover)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'var(--accent)';
+                }}
+              >
+                Apply
+              </button>
+
+              {/* Mark Done Shortcut */}
+              <button
+                type="button"
+                onClick={handleBulkMarkDone}
+                style={{
+                  background: 'rgba(16, 185, 129, 0.12)',
+                  color: 'var(--success)',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  padding: '0.35rem 0.9rem',
+                  borderRadius: '6px',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(16, 185, 129, 0.2)';
+                  e.currentTarget.style.borderColor = 'var(--success)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(16, 185, 129, 0.12)';
+                  e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+                }}
+              >
+                Mark Done ✓
+              </button>
+
+              {/* Clear Button */}
+              <button
+                type="button"
+                onClick={handleClearSelection}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid var(--card-border)',
+                  color: 'var(--muted)',
+                  padding: '0.35rem 0.8rem',
+                  borderRadius: '6px',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--muted)';
+                  e.currentTarget.style.color = 'var(--foreground)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--card-border)';
+                  e.currentTarget.style.color = 'var(--muted)';
+                }}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
