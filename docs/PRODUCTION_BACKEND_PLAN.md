@@ -65,8 +65,8 @@ This document outlines the phased migration plan for transitioning SERPVault fro
 * Ensure imported data is securely scoped to projects without creating side-effects.
 
 ### Action Items
-- [ ] **Scoped Upload Pipeline**: Enforce that file uploads map to a valid `project_id` associated with the current user.
-- [ ] **Enforce Domain Restrictions**:
+- [x] **Scoped Upload Pipeline**: Enforce that file uploads map to a valid `project_id` associated with the current user.
+- [x] **Enforce Domain Restrictions**:
   * During mapping (`mapKeyword`, `mapKeywordGap`, etc.), do not auto-create project domains for competitor rows.
   * Flag incoming rows that match first-party domains to assign them correctly to the project's primary profile.
 

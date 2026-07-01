@@ -20,6 +20,7 @@ import type { ReportType, UploadRecord, DedupeReport, ProjectRecord } from '@/li
 import { getSelectedProjectId, getStore, setSelectedProjectId as setStorageSelectedProjectId, subscribeProjectScopeChange } from '@/lib/storage';
 import { getCurrentUserId } from '@/lib/supabase/auth';
 import { saveSelectedProjectSetting } from '@/lib/supabase/user-settings';
+import { resolveImportScope } from '@/lib/import-scope';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -495,14 +496,40 @@ export default function UploadPage() {
       updateResult(id, { isImporting: true, error: undefined, successMessage: undefined });
       try {
         const currentProjectId = getSelectedProjectId();
-        const imported = await commitToStore(result.rows, result.selectedType, result.filename, currentProjectId || undefined);
+        const scopeResult = resolveImportScope(
+          result.rows,
+          result.selectedType,
+          currentProjectId,
+          projects
+        );
+
+        if (scopeResult.hardError) {
+          throw new Error(scopeResult.hardError);
+        }
+
+        const imported = await commitToStore(
+          result.rows,
+          result.selectedType,
+          result.filename,
+          scopeResult.effectiveProjectId
+        );
+
+        const isAutoAssigned = !currentProjectId && scopeResult.effectiveProjectId;
+        const autoProjName = isAutoAssigned
+          ? projects.find((p) => p.id === scopeResult.effectiveProjectId)?.name
+          : undefined;
+
+        const successMessage = autoProjName
+          ? `Successfully imported! (Auto-assigned to project "${autoProjName}")`
+          : 'Successfully imported!';
+
         updateResult(id, {
           status: 'imported',
           detectedType: result.selectedType,
           showColumns: false,
           showReimport: false,
           isImporting: false,
-          successMessage: 'Successfully imported!',
+          successMessage,
           ...imported,
         });
       } catch (err) {
@@ -515,7 +542,7 @@ export default function UploadPage() {
         });
       }
     },
-    [results, updateResult]
+    [results, updateResult, projects]
   );
 
   // ---- Re-import an already-imported file with a new type ----
@@ -531,15 +558,41 @@ export default function UploadPage() {
         const oldUpload = store.uploads.find((u) => u.id === result.uploadId);
         const projectId = oldUpload?.projectId;
 
+        const scopeResult = resolveImportScope(
+          result.rows,
+          newType,
+          projectId,
+          projects
+        );
+
+        if (scopeResult.hardError) {
+          throw new Error(scopeResult.hardError);
+        }
+
         await db.deleteUpload(result.uploadId);
-        const imported = await commitToStore(result.rows, newType, result.filename, projectId);
+        const imported = await commitToStore(
+          result.rows,
+          newType,
+          result.filename,
+          scopeResult.effectiveProjectId
+        );
+
+        const isAutoAssigned = !projectId && scopeResult.effectiveProjectId;
+        const autoProjName = isAutoAssigned
+          ? projects.find((p) => p.id === scopeResult.effectiveProjectId)?.name
+          : undefined;
+
+        const successMessage = autoProjName
+          ? `Successfully re-imported! (Auto-assigned to project "${autoProjName}")`
+          : 'Successfully re-imported!';
+
         updateResult(id, {
           status: 'imported',
           selectedType: newType,
           detectedType: newType,
           showReimport: false,
           isImporting: false,
-          successMessage: 'Successfully re-imported!',
+          successMessage,
           ...imported,
         });
       } catch (err) {
@@ -552,7 +605,7 @@ export default function UploadPage() {
         });
       }
     },
-    [results, updateResult]
+    [results, updateResult, projects]
   );
 
   // ---------------------------------------------------------------------------
@@ -788,6 +841,7 @@ export default function UploadPage() {
                 key={r.id}
                 result={r}
                 selectedProjectId={selectedProjectId}
+                projects={projects}
                 onTypeChange={(t) => updateResult(r.id, { selectedType: t })}
                 onImport={() => handleImport(r.id)}
                 onReimport={(t) => handleReimport(r.id, t)}
@@ -823,6 +877,7 @@ export default function UploadPage() {
 interface ResultCardProps {
   result: FileResult;
   selectedProjectId: string | null;
+  projects: ProjectRecord[];
   onTypeChange: (t: ReportType) => void;
   onImport: () => Promise<void>;
   onReimport: (t: ReportType) => Promise<void>;
@@ -833,6 +888,7 @@ interface ResultCardProps {
 function ResultCard({
   result,
   selectedProjectId,
+  projects,
   onTypeChange,
   onImport,
   onReimport,
@@ -840,6 +896,7 @@ function ResultCard({
   onToggleReimport,
 }: ResultCardProps) {
   const { status, detectedType, selectedType, filename, headers, showColumns, showReimport } = result;
+  const scopeResult = resolveImportScope(result.rows, selectedType, selectedProjectId, projects);
 
   const [confirmingReimport, setConfirmingReimport] = useState<ReportType | null>(null);
   const [reimportSelected, setReimportSelected] = useState<ReportType>(detectedType === 'unknown' ? 'keyword' : detectedType);
@@ -1080,10 +1137,51 @@ function ResultCard({
                 </div>
               )}
 
-              {/* Project requirement warning for organic positions */}
-              {selectedType === 'organic_positions' && !selectedProjectId && (
-                <div style={{ marginTop: '0.5rem', fontSize: '0.78rem', color: 'var(--danger)', fontWeight: 600 }}>
-                  ✗ Error: Project selection is required to store Organic Positions reports. Please select or create a project above.
+              {/* Import Scope / Auto-assignment Messages & Warnings */}
+              {scopeResult.warnings.length > 0 && (
+                <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  {scopeResult.warnings.map((msg, idx) => {
+                    const isAutoAssign = msg.includes('Auto-assigned');
+                    return (
+                      <div
+                        key={idx}
+                        style={{
+                          fontSize: '0.78rem',
+                          color: isAutoAssign ? 'var(--success)' : 'var(--warning)',
+                          fontWeight: 500,
+                          background: isAutoAssign ? 'rgba(16, 185, 129, 0.08)' : 'rgba(245, 158, 11, 0.08)',
+                          borderLeft: `3px solid ${isAutoAssign ? 'var(--success)' : 'var(--warning)'}`,
+                          padding: '0.35rem 0.5rem',
+                          borderRadius: '4px',
+                        }}
+                      >
+                        {isAutoAssign ? '[OK]' : '[WARN]'} {msg}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Clear ASCII error box for organic positions project requirement */}
+              {scopeResult.hardError && (
+                <div style={{
+                  fontFamily: 'monospace',
+                  whiteSpace: 'pre-wrap',
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  border: '1px solid var(--danger)',
+                  color: 'var(--danger)',
+                  padding: '0.8rem 1rem',
+                  borderRadius: '6px',
+                  marginTop: '0.75rem',
+                  fontSize: '0.78rem',
+                  lineHeight: '1.4'
+                }}>
+                  {`+-------------------------------------------------------------+
+| [ERROR] PROJECT SELECTION REQUIRED                          |
++-------------------------------------------------------------+
+| Organic Positions imports require a valid existing project. |
+| Please select or create a project above to continue.        |
++-------------------------------------------------------------+`}
                 </div>
               )}
 
@@ -1093,20 +1191,20 @@ function ResultCard({
                   disabled={
                     result.isImporting ||
                     result.health.requiredFields.some((rf) => !rf.present) ||
-                    (selectedType === 'organic_positions' && !selectedProjectId)
+                    !!scopeResult.hardError
                   }
                   onClick={onImport}
                   style={{
                     background:
                       result.isImporting ||
                       result.health.requiredFields.some((rf) => !rf.present) ||
-                      (selectedType === 'organic_positions' && !selectedProjectId)
+                      !!scopeResult.hardError
                         ? 'var(--card-border)'
                         : 'var(--accent)',
                     color:
                       result.isImporting ||
                       result.health.requiredFields.some((rf) => !rf.present) ||
-                      (selectedType === 'organic_positions' && !selectedProjectId)
+                      !!scopeResult.hardError
                         ? 'var(--muted)'
                         : '#fff',
                     border: 'none',
@@ -1117,7 +1215,7 @@ function ResultCard({
                     cursor:
                       result.isImporting ||
                       result.health.requiredFields.some((rf) => !rf.present) ||
-                      (selectedType === 'organic_positions' && !selectedProjectId)
+                      !!scopeResult.hardError
                         ? 'not-allowed'
                         : 'pointer',
                     opacity: result.isImporting ? 0.7 : 1,

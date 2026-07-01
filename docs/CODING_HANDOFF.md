@@ -2,9 +2,13 @@
 
 ## Context & Repository State
 - **Current Branch**: `feature/project-site-selector`
-- **Latest Pushed Commit**: `08ce2dd Persist content brief workflow state in Supabase`
+- **Latest Pushed Commit**: `cb29b64 Update handoff after content brief workflow push`
 - **Final Session Batch**:
+  - [ ] `app/upload/page.tsx`
   - [ ] `docs/CODING_HANDOFF.md`
+  - [ ] `docs/PRODUCTION_BACKEND_PLAN.md`
+  - [ ] `lib/import-scope.ts`
+  - [ ] `test/import-scope.test.ts`
 
 ## Major Completed Features
 - [x] **Project/Site Selector**: Added robust site/project selector support.
@@ -52,13 +56,27 @@ Before completing code batches, run:
 
 ### [2026-07-01]
 <!-- AUTO_SNAPSHOT_START -->
-#### Auto Snapshot (HEAD: 08ce2dd)
+#### Auto Snapshot (HEAD: cb29b64)
 - **Changed Files**:
+  - `app/upload/page.tsx`
   - `docs/CODING_HANDOFF.md`
+  - `docs/PRODUCTION_BACKEND_PLAN.md`
+  - `lib/import-scope.ts`
+  - `test/import-scope.test.ts`
 - **Validation Reminders**:
   - Run `npm run build` to verify types and Next.js compilation.
   - Run `git diff --check` to check for stray spaces and conflict markers.
 <!-- AUTO_SNAPSHOT_END -->
+### [2026-07-01] - Project-Scoped Imports & Domain Scoping Rules (Phase 4)
+- **Files Touched**:
+  - `lib/import-scope.ts`
+  - `test/import-scope.test.ts`
+  - `app/upload/page.tsx`
+  - `docs/PRODUCTION_BACKEND_PLAN.md`
+  - `docs/CODING_HANDOFF.md`
+- **Validation**: `npm test`, `npm run build`, and `git diff --check`
+- **Notes**: Developed pure import-scoping helper to normalize domains, validate selected project IDs, and auto-detect explicit first-party project domains. Integrated helper into the upload/re-import pipeline, preventing stale project ID writes and auto-assigning matching project domains with a visual success notice. Added a clear ASCII warning/error box for `organic_positions` reports when no valid project is resolved. Added comprehensive node tests covering helper behaviors.
+
 ### [2026-07-01] - Opportunity Queues Server-Side with Local Fallback (Phase 3)
 - **Files Touched**:
   - `supabase/migrations/20260701000002_opportunity_workflow.sql`
