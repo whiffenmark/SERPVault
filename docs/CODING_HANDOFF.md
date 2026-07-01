@@ -2,13 +2,13 @@
 
 ## Context & Repository State
 - **Current Branch**: `feature/project-site-selector`
-- **Latest Pushed Commit**: `cb29b64 Update handoff after content brief workflow push`
+- **Latest Pushed Commit**: `b937e41 Add project-scoped import guardrails`
 - **Final Session Batch**:
-  - [ ] `app/upload/page.tsx`
+  - [ ] `app/settings/page.tsx`
   - [ ] `docs/CODING_HANDOFF.md`
   - [ ] `docs/PRODUCTION_BACKEND_PLAN.md`
-  - [ ] `lib/import-scope.ts`
-  - [ ] `test/import-scope.test.ts`
+  - [ ] `lib/all-data-export.ts`
+  - [ ] `test/all-data-export.test.ts`
 
 ## Major Completed Features
 - [x] **Project/Site Selector**: Added robust site/project selector support.
@@ -56,17 +56,27 @@ Before completing code batches, run:
 
 ### [2026-07-01]
 <!-- AUTO_SNAPSHOT_START -->
-#### Auto Snapshot (HEAD: cb29b64)
+#### Auto Snapshot (HEAD: b937e41)
 - **Changed Files**:
-  - `app/upload/page.tsx`
+  - `app/settings/page.tsx`
   - `docs/CODING_HANDOFF.md`
   - `docs/PRODUCTION_BACKEND_PLAN.md`
-  - `lib/import-scope.ts`
-  - `test/import-scope.test.ts`
+  - `lib/all-data-export.ts`
+  - `test/all-data-export.test.ts`
 - **Validation Reminders**:
   - Run `npm run build` to verify types and Next.js compilation.
   - Run `git diff --check` to check for stray spaces and conflict markers.
 <!-- AUTO_SNAPSHOT_END -->
+
+### [2026-07-01] - Data Export Tools (Phase 6)
+- **Files Touched**:
+  - `lib/all-data-export.ts`
+  - `test/all-data-export.test.ts`
+  - `app/settings/page.tsx`
+  - `docs/PRODUCTION_BACKEND_PLAN.md`
+- **Validation**: `npm test`, `npm run build`, and `git diff --check`
+- **Notes**: Built a production-grade one-click all-data export from the Settings page. Added a pure helper module `lib/all-data-export.ts` to serialize 10 core database tables into CSV formatted data with correct escaping and stable headers, alongside JSON files for workflows, action plan metadata, and export history. Created a lightweight, zero-dependency, Store-mode ZIP compiler. Wired the new action as an async button in the Settings page Backup & Restore panel with active loading/disabled state and flash notices. Added Node tests in `test/all-data-export.test.ts` verifying formatting, manifest row counts, and ZIP binary headers.
+
 ### [2026-07-01] - Project-Scoped Imports & Domain Scoping Rules (Phase 4)
 - **Files Touched**:
   - `lib/import-scope.ts`

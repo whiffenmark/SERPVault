@@ -4,17 +4,23 @@ import { useState, useEffect } from 'react';
 import { clearStore, getStore } from '@/lib/storage';
 import type { AppStore } from '@/lib/types';
 import * as db from '@/lib/db';
-import { supabaseEnabled } from '@/lib/supabase/client';
+import { supabaseEnabled, getSupabase } from '@/lib/supabase/client';
 import {
   signInWithEmail,
   signUpWithEmail,
   signOut,
   subscribeAuthState,
-  isAuthAvailable
+  isAuthAvailable,
+  getCurrentUserId
 } from '@/lib/supabase/auth';
 import type { Session } from '@supabase/supabase-js';
 import Card from '@/components/Card';
 import { buildMigrationSummary } from '@/lib/migration-summary';
+import { getMergedOpportunityWorkflowMap } from '@/lib/opportunity-workflow';
+import { getMergedContentBriefWorkflowMap } from '@/lib/content-brief-workflow';
+import { getActionPlanMetadataMap } from '@/lib/action-plan-metadata';
+import { getExportHistory } from '@/lib/export-history';
+import { buildExportManifestAndFiles, createZip } from '@/lib/all-data-export';
 
 interface BackupFile {
   appName: string;
@@ -68,6 +74,7 @@ export default function SettingsPage() {
   // Backup & Restore states
   const [restoreData, setRestoreData] = useState<BackupFile | null>(null);
   const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
+  const [exportingAll, setExportingAll] = useState(false);
 
   const loadCounts = () => {
     Promise.all([
@@ -380,6 +387,82 @@ export default function SettingsPage() {
       loadCounts();
     } catch (err) {
       flash(`Restore failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    }
+  };
+
+  const handleDownloadAllData = async () => {
+    setExportingAll(true);
+    try {
+      const [
+        projects,
+        competitors,
+        uploads,
+        keywords,
+        keywordGaps,
+        competitorPages,
+        backlinks,
+        referringDomains,
+        anchorTexts,
+        dedupeReports,
+        opportunityWorkflowMap,
+        contentBriefWorkflowMap,
+      ] = await Promise.all([
+        db.getProjects(),
+        db.getCompetitors(),
+        db.getUploads(),
+        db.getKeywords(),
+        db.getKeywordGaps(),
+        db.getCompetitorPages(),
+        db.getBacklinks(),
+        db.getReferringDomains(),
+        db.getAnchorTexts(),
+        db.getDedupeReports(),
+        getMergedOpportunityWorkflowMap(),
+        getMergedContentBriefWorkflowMap(),
+      ]);
+
+      const actionPlanMetadataMap = getActionPlanMetadataMap();
+      const exportHistory = getExportHistory();
+
+      const sb = getSupabase();
+      const userId = sb ? await getCurrentUserId() : null;
+      const sourceMode = (sb && userId) ? 'supabase' : 'local';
+
+      const { files } = buildExportManifestAndFiles({
+        projects,
+        competitors,
+        uploads,
+        keywords,
+        keywordGaps,
+        competitorPages,
+        backlinks,
+        referringDomains,
+        anchorTexts,
+        dedupeReports,
+        opportunityWorkflowMap,
+        contentBriefWorkflowMap,
+        actionPlanMetadataMap,
+        exportHistory,
+        sourceMode,
+      });
+
+      const zipData = createZip(files);
+      const blob = new Blob([zipData as BlobPart], { type: 'application/zip' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `serpvault-all-data-export-${new Date().toISOString().slice(0, 10)}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      flash('All data exported to ZIP successfully.', 'success');
+    } catch (err) {
+      console.error('All data export failed:', err);
+      flash(`Export failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    } finally {
+      setExportingAll(false);
     }
   };
 
@@ -750,6 +833,25 @@ export default function SettingsPage() {
               style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: '7px', padding: '0.5rem 1.25rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
             >
               Export Backup (JSON)
+            </button>
+
+            <button
+              type="button"
+              onClick={handleDownloadAllData}
+              disabled={exportingAll}
+              style={{
+                background: 'var(--success)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '7px',
+                padding: '0.5rem 1.25rem',
+                cursor: exportingAll ? 'wait' : 'pointer',
+                fontWeight: 600,
+                fontSize: '0.85rem',
+                opacity: exportingAll ? 0.6 : 1
+              }}
+            >
+              {exportingAll ? 'Exporting All...' : 'Download All Data (ZIP)'}
             </button>
 
             <input
