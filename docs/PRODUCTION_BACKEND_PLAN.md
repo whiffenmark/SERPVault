@@ -79,7 +79,7 @@ This document outlines the phased migration plan for transitioning SERPVault fro
 
 ### Action Items
 - [x] **Build Migration Utility**: Created a pure helper (`lib/migration-summary.ts`) and a guarded local-to-cloud backfill wizard in the Settings UI with preflight summary calculations, warnings, confirmation checkbox guards, progress states, and zero-row checks.
-- [ ] **Conflict Resolution**: Define rules for handling duplicate project names or domains during import (e.g., merge or prompt user to rename).
+- [x] **Conflict Resolution**: Implemented project conflict resolution helper (`lib/project-conflicts.ts`) to normalize domains/names and build a conflict plan matching exact domain/location/niche first, then fallback to normalized name, skipping duplicates and remapping references.
 
 ---
 

@@ -2,13 +2,14 @@
 
 ## Context & Repository State
 - **Current Branch**: `feature/project-site-selector`
-- **Latest Pushed Commit**: `6aaf3bd Add auth and RLS foundation`
+- **Latest Pushed Commit**: `670da52 Add guarded cloud migration preflight`
 - **Final Session Batch**:
   - [ ] `app/settings/page.tsx`
   - [ ] `docs/CODING_HANDOFF.md`
   - [ ] `docs/PRODUCTION_BACKEND_PLAN.md`
-  - [ ] `lib/migration-summary.ts`
-  - [ ] `test/migration-summary.test.ts`
+  - [ ] `lib/db.ts`
+  - [ ] `lib/project-conflicts.ts`
+  - [ ] `test/project-conflicts.test.ts`
 
 ## Major Completed Features
 - [x] **Project/Site Selector**: Added robust site/project selector support.
@@ -56,27 +57,41 @@ Before completing code batches, run:
 
 ### [2026-07-01]
 <!-- AUTO_SNAPSHOT_START -->
-#### Auto Snapshot (HEAD: 6aaf3bd)
+#### Auto Snapshot (HEAD: 670da52)
 - **Changed Files**:
   - `app/settings/page.tsx`
   - `docs/CODING_HANDOFF.md`
   - `docs/PRODUCTION_BACKEND_PLAN.md`
-  - `lib/migration-summary.ts`
-  - `test/migration-summary.test.ts`
+  - `lib/db.ts`
+  - `lib/project-conflicts.ts`
+  - `test/project-conflicts.test.ts`
 - **Validation Reminders**:
   - Run `npm run build` to verify types and Next.js compilation.
   - Run `git diff --check` to check for stray spaces and conflict markers.
 <!-- AUTO_SNAPSHOT_END -->
-- **Commit**: Final handoff/type-hardening commit; see latest git log on feature/project-site-selector after push
-- **Files Touched**:
-  - `app/content/page.tsx`
-  - `app/upload/page.tsx`
-  - `app/keywords/page.tsx`
+### [2026-07-01] - Project Conflict Resolution for Local-to-Cloud Migration
+<!-- AUTO_SNAPSHOT_START -->
+#### Auto Snapshot (HEAD: 670da52)
+- **Changed Files**:
   - `app/settings/page.tsx`
-  - `lib/export.ts`
   - `docs/CODING_HANDOFF.md`
-- **Validation**: `npm run build` and `git diff --check`
-- **Notes**: Completed initial type-hardening pass.
+  - `docs/PRODUCTION_BACKEND_PLAN.md`
+  - `lib/db.ts`
+  - `lib/project-conflicts.ts`
+  - `test/project-conflicts.test.ts`
+- **Validation Reminders**:
+  - Run `npm run build` to verify types and Next.js compilation.
+  - Run `git diff --check` to check for stray spaces and conflict markers.
+<!-- AUTO_SNAPSHOT_END -->
+- **Files Touched**:
+  - `lib/project-conflicts.ts`
+  - `test/project-conflicts.test.ts`
+  - `lib/db.ts`
+  - `app/settings/page.tsx`
+  - `docs/PRODUCTION_BACKEND_PLAN.md`
+  - `docs/CODING_HANDOFF.md`
+- **Validation**: `npm test`, `npm run build` and `git diff --check`
+- **Notes**: Implemented pure project conflicts plan helper to normalize domains/names and resolve matches. Updated the sync pipeline in `lib/db.ts` to skip duplicate project creations and rewrite `project_id` references in competitors and uploads. Enhanced the Settings page UI to display detailed project merge descriptions.
 
 ### [2026-07-01] - Production Auth & RLS Foundation
 - **Files Touched**:

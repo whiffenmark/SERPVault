@@ -210,7 +210,11 @@ export default function SettingsPage() {
       } else {
         const result = await db.migrateLocalToSupabase();
         setMigrationStatus('success');
-        setMigrationMessage(`Successfully migrated ${result.rows.toLocaleString()} rows across ${result.tables.length} tables to Supabase [OK]`);
+        let msg = `Successfully migrated ${result.rows.toLocaleString()} rows across ${result.tables.length} tables to Supabase [OK]`;
+        if (result.projectSummaries && result.projectSummaries.length > 0) {
+          msg += `\n\nMerged existing projects:\n${result.projectSummaries.map(s => `- ${s}`).join('\n')}`;
+        }
+        setMigrationMessage(msg);
         flash(`Migrated ${result.rows.toLocaleString()} rows to Supabase: ${result.tables.join(', ')}`, 'success');
         setConfirmMigration(false);
         loadCounts();
@@ -599,7 +603,8 @@ export default function SettingsPage() {
                       padding: '0.6rem 0.8rem',
                       fontSize: '0.8rem',
                       marginBottom: '1rem',
-                      lineHeight: '1.4'
+                      lineHeight: '1.4',
+                      whiteSpace: 'pre-line'
                     }}>
                       {migrationMessage}
                     </div>

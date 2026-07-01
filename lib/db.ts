@@ -12,6 +12,7 @@
 import { getSupabase } from './supabase/client';
 import { getCurrentUserId } from './supabase/auth';
 import { getStore, updateStore, removeUpload as lsRemoveUpload } from './storage';
+import { buildProjectConflictPlan } from './project-conflicts';
 import type {
   UploadRecord,
   KeywordRecord,
@@ -808,7 +809,13 @@ export async function deleteUpload(uploadId: string): Promise<void> {
 // Migrate localStorage → Supabase (one-time sync)
 // ---------------------------------------------------------------------------
 
-export async function migrateLocalToSupabase(): Promise<{ tables: string[]; rows: number }> {
+export async function migrateLocalToSupabase(): Promise<{
+  tables: string[];
+  rows: number;
+  projectRemap?: Record<string, string>;
+  projectSummaries?: string[];
+  projectWarnings?: string[];
+}> {
   const sb = getSupabase();
   if (!sb) throw new Error('Supabase not configured');
   const userId = await getCurrentUserId();
@@ -829,9 +836,40 @@ export async function migrateLocalToSupabase(): Promise<{ tables: string[]; rows
     totalRows += rows.length;
   };
 
-  await run('projects', (store.projects || []).map(toProjectRow));
-  await run('competitors', (store.competitors || []).map(toCompetitorRow));
-  await run('uploads', store.uploads.map(toUploadRow));
+  // Fetch the signed-in user's existing cloud projects before uploading
+  const { data: remoteRows, error: fetchError } = await sb
+    .from('projects')
+    .select('*')
+    .eq('user_id', userId);
+  if (fetchError) {
+    console.error('[migrate] failed to fetch remote projects:', fetchError.message);
+  }
+  const remoteProjects = (remoteRows || []).map(fromProjectRow);
+
+  // Build conflict plan
+  const plan = buildProjectConflictPlan(store.projects || [], remoteProjects);
+
+  // Use the plan to skip creating duplicate projects
+  await run('projects', plan.projectsToCreate.map(toProjectRow));
+
+  // Rewrite project_id references in competitors according to the remap before writing
+  const mappedCompetitors = (store.competitors || []).map(toCompetitorRow).map(c => {
+    if (c.project_id && plan.projectIdMap[c.project_id]) {
+      return { ...c, project_id: plan.projectIdMap[c.project_id] };
+    }
+    return c;
+  });
+  await run('competitors', mappedCompetitors);
+
+  // Rewrite project_id references in uploads according to the remap before writing
+  const mappedUploads = (store.uploads || []).map(toUploadRow).map(u => {
+    if (u.project_id && plan.projectIdMap[u.project_id]) {
+      return { ...u, project_id: plan.projectIdMap[u.project_id] };
+    }
+    return u;
+  });
+  await run('uploads', mappedUploads);
+
   await run('dedupe_reports', store.dedupeReports.map(toDrRow));
   await run('keywords', store.keywords.map(toKwRow));
   await run('keyword_gaps', store.keywordGaps.map(toGapRow));
@@ -840,7 +878,13 @@ export async function migrateLocalToSupabase(): Promise<{ tables: string[]; rows
   await run('referring_domains', store.referringDomains.map(toRdRow));
   await run('anchor_texts', store.anchorTexts.map(toAtRow));
 
-  return { tables, rows: totalRows };
+  return {
+    tables,
+    rows: totalRows,
+    projectRemap: plan.projectIdMap,
+    projectSummaries: plan.summaries,
+    projectWarnings: plan.warnings,
+  };
 }
 
 // ---------------------------------------------------------------------------
