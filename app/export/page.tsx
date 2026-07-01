@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, type ReactNode } from 'react';
 import * as db from '@/lib/db';
-import { getContentBriefWorkflowMap, type ContentBriefWorkflowItem } from '@/lib/content-brief-workflow';
+import { getContentBriefWorkflowMap, getMergedContentBriefWorkflowMap, type ContentBriefWorkflowItem } from '@/lib/content-brief-workflow';
 import {
   filterRowsBySite,
   getSelectedSite,
@@ -105,6 +105,9 @@ export default function ExportPage() {
 
     const cbwMap = getContentBriefWorkflowMap();
     setContentBriefWorkflowMap(cbwMap);
+    getMergedContentBriefWorkflowMap().then((merged) => {
+      setContentBriefWorkflowMap(merged);
+    });
 
     setHistory(getExportHistory());
 
@@ -136,7 +139,11 @@ export default function ExportPage() {
 
     const unsubscribe = subscribeProjectScopeChange(() => {
       setSelectedSiteState(getSelectedSite());
-      setContentBriefWorkflowMap(getContentBriefWorkflowMap());
+      const localCbwMap = getContentBriefWorkflowMap();
+      setContentBriefWorkflowMap(localCbwMap);
+      getMergedContentBriefWorkflowMap().then((merged) => {
+        setContentBriefWorkflowMap(merged);
+      });
     });
     return () => unsubscribe();
   }, []);

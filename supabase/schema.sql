@@ -177,3 +177,17 @@ create table if not exists opportunity_workflow_items (
 );
 
 alter table opportunity_workflow_items disable row level security;
+
+create table if not exists content_brief_workflows (
+  user_id uuid,
+  brief_id text,
+  status text check (status in ('Draft', 'In Review', 'Approved', 'Published', 'Archived')),
+  owner text,
+  due_date text,
+  notes text,
+  checked_items jsonb default '{}',
+  created_at timestamptz default now(),
+  updated_at timestamptz,
+  primary key (user_id, brief_id)
+);
+alter table content_brief_workflows disable row level security;

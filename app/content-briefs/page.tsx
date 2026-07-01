@@ -10,8 +10,8 @@ import Card from '@/components/Card';
 import ScoreBadge from '@/components/ScoreBadge';
 import { buildContentBriefs, generateContentBriefMarkdown, type ContentBrief } from '@/lib/content-briefs';
 import {
-  getContentBriefWorkflowMap,
-  updateContentBriefWorkflowItem,
+  getMergedContentBriefWorkflowMap,
+  updateContentBriefWorkflowItemAsync,
   generateContentBriefMarkdownWithWorkflow,
   WORKFLOW_STATUSES,
   STATUS_COLORS,
@@ -52,13 +52,14 @@ export default function ContentBriefsPage() {
       db.getKeywordGaps(),
       db.getCompetitorPages(),
       db.getBacklinks(),
+      getMergedContentBriefWorkflowMap(),
     ])
-      .then(([kws, gaps, comps, bls]) => {
+      .then(([kws, gaps, comps, bls, mergedWorkflowMap]) => {
         setKeywords(kws);
         setKeywordGaps(gaps);
         setCompetitorPages(comps);
         setBacklinks(bls);
-        setWorkflowMap(getContentBriefWorkflowMap());
+        setWorkflowMap(mergedWorkflowMap);
       })
       .catch((err) => {
         console.error('Failed to load data for content briefs:', err);
@@ -69,6 +70,9 @@ export default function ContentBriefsPage() {
 
     const unsubscribe = subscribeProjectScopeChange(() => {
       setSelectedSiteState(getSelectedSite());
+      getMergedContentBriefWorkflowMap().then((merged) => {
+        setWorkflowMap(merged);
+      });
     });
     return () => unsubscribe();
   }, []);
@@ -873,13 +877,26 @@ export default function ContentBriefsPage() {
                           <label style={{ fontSize: '0.72rem', color: 'var(--muted)', fontWeight: 500 }}>Workflow Status</label>
                           <select
                             value={workflowMap[selectedBrief.id]?.status || 'Draft'}
-                            onChange={(e) => {
+                            onChange={async (e) => {
                               const status = e.target.value as ContentBriefWorkflowStatus;
-                              const updatedItem = updateContentBriefWorkflowItem(selectedBrief.id, { status });
+                              const tempItem: ContentBriefWorkflowItem = {
+                                ...(workflowMap[selectedBrief.id] || { status: 'Draft' }),
+                                status,
+                                updatedAt: new Date().toISOString(),
+                              };
                               setWorkflowMap(prev => ({
                                 ...prev,
-                                [selectedBrief.id]: updatedItem
+                                [selectedBrief.id]: tempItem
                               }));
+                              try {
+                                const updatedItem = await updateContentBriefWorkflowItemAsync(selectedBrief.id, { status });
+                                setWorkflowMap(prev => ({
+                                  ...prev,
+                                  [selectedBrief.id]: updatedItem
+                                }));
+                              } catch (err) {
+                                console.error('Failed to update status:', err);
+                              }
                             }}
                             style={{
                               padding: '0.4rem 0.5rem',
@@ -906,13 +923,26 @@ export default function ContentBriefsPage() {
                             type="text"
                             placeholder="Assign owner..."
                             value={workflowMap[selectedBrief.id]?.owner || ''}
-                            onChange={(e) => {
+                            onChange={async (e) => {
                               const owner = e.target.value;
-                              const updatedItem = updateContentBriefWorkflowItem(selectedBrief.id, { owner });
+                              const tempItem: ContentBriefWorkflowItem = {
+                                ...(workflowMap[selectedBrief.id] || { status: 'Draft' }),
+                                owner,
+                                updatedAt: new Date().toISOString(),
+                              };
                               setWorkflowMap(prev => ({
                                 ...prev,
-                                [selectedBrief.id]: updatedItem
+                                [selectedBrief.id]: tempItem
                               }));
+                              try {
+                                const updatedItem = await updateContentBriefWorkflowItemAsync(selectedBrief.id, { owner });
+                                setWorkflowMap(prev => ({
+                                  ...prev,
+                                  [selectedBrief.id]: updatedItem
+                                }));
+                              } catch (err) {
+                                console.error('Failed to update owner:', err);
+                              }
                             }}
                             style={{
                               padding: '0.4rem 0.5rem',
@@ -933,13 +963,26 @@ export default function ContentBriefsPage() {
                           <input
                             type="date"
                             value={workflowMap[selectedBrief.id]?.dueDate || ''}
-                            onChange={(e) => {
+                            onChange={async (e) => {
                               const dueDate = e.target.value;
-                              const updatedItem = updateContentBriefWorkflowItem(selectedBrief.id, { dueDate });
+                              const tempItem: ContentBriefWorkflowItem = {
+                                ...(workflowMap[selectedBrief.id] || { status: 'Draft' }),
+                                dueDate,
+                                updatedAt: new Date().toISOString(),
+                              };
                               setWorkflowMap(prev => ({
                                 ...prev,
-                                [selectedBrief.id]: updatedItem
+                                [selectedBrief.id]: tempItem
                               }));
+                              try {
+                                const updatedItem = await updateContentBriefWorkflowItemAsync(selectedBrief.id, { dueDate });
+                                setWorkflowMap(prev => ({
+                                  ...prev,
+                                  [selectedBrief.id]: updatedItem
+                                }));
+                              } catch (err) {
+                                console.error('Failed to update due date:', err);
+                              }
                             }}
                             style={{
                               padding: '0.4rem 0.5rem',
@@ -962,13 +1005,26 @@ export default function ContentBriefsPage() {
                           placeholder="Add notes for writers/editors..."
                           value={workflowMap[selectedBrief.id]?.notes || ''}
                           rows={2}
-                          onChange={(e) => {
+                          onChange={async (e) => {
                             const notes = e.target.value;
-                            const updatedItem = updateContentBriefWorkflowItem(selectedBrief.id, { notes });
+                            const tempItem: ContentBriefWorkflowItem = {
+                              ...(workflowMap[selectedBrief.id] || { status: 'Draft' }),
+                              notes,
+                              updatedAt: new Date().toISOString(),
+                            };
                             setWorkflowMap(prev => ({
                               ...prev,
-                              [selectedBrief.id]: updatedItem
+                              [selectedBrief.id]: tempItem
                             }));
+                            try {
+                              const updatedItem = await updateContentBriefWorkflowItemAsync(selectedBrief.id, { notes });
+                              setWorkflowMap(prev => ({
+                                ...prev,
+                                [selectedBrief.id]: updatedItem
+                              }));
+                            } catch (err) {
+                              console.error('Failed to update notes:', err);
+                            }
                           }}
                           style={{
                             padding: '0.4rem 0.5rem',
@@ -988,14 +1044,27 @@ export default function ContentBriefsPage() {
                       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.25rem' }}>
                         <button
                           type="button"
-                          onClick={() => {
+                          onClick={async () => {
                             const currentStatus = workflowMap[selectedBrief.id]?.status || 'Draft';
                             const newStatus: ContentBriefWorkflowStatus = currentStatus === 'Archived' ? 'Draft' : 'Archived';
-                            const updatedItem = updateContentBriefWorkflowItem(selectedBrief.id, { status: newStatus });
+                            const tempItem: ContentBriefWorkflowItem = {
+                              ...(workflowMap[selectedBrief.id] || { status: 'Draft' }),
+                              status: newStatus,
+                              updatedAt: new Date().toISOString(),
+                            };
                             setWorkflowMap(prev => ({
                               ...prev,
-                              [selectedBrief.id]: updatedItem
+                              [selectedBrief.id]: tempItem
                             }));
+                            try {
+                              const updatedItem = await updateContentBriefWorkflowItemAsync(selectedBrief.id, { status: newStatus });
+                              setWorkflowMap(prev => ({
+                                ...prev,
+                                [selectedBrief.id]: updatedItem
+                              }));
+                            } catch (err) {
+                              console.error('Failed to archive brief:', err);
+                            }
                           }}
                           style={{
                             background: 'transparent',
@@ -1146,16 +1215,29 @@ export default function ContentBriefsPage() {
                               <input
                                 type="checkbox"
                                 checked={isChecked}
-                                onChange={(e) => {
+                                onChange={async (e) => {
                                   const updatedChecked = {
                                     ...(workflowMap[selectedBrief.id]?.checkedItems || {}),
                                     [idx]: e.target.checked,
                                   };
-                                  const updatedItem = updateContentBriefWorkflowItem(selectedBrief.id, { checkedItems: updatedChecked });
+                                  const tempItem: ContentBriefWorkflowItem = {
+                                    ...(workflowMap[selectedBrief.id] || { status: 'Draft' }),
+                                    checkedItems: updatedChecked,
+                                    updatedAt: new Date().toISOString(),
+                                  };
                                   setWorkflowMap((prev) => ({
                                     ...prev,
-                                    [selectedBrief.id]: updatedItem,
+                                    [selectedBrief.id]: tempItem,
                                   }));
+                                  try {
+                                    const updatedItem = await updateContentBriefWorkflowItemAsync(selectedBrief.id, { checkedItems: updatedChecked });
+                                    setWorkflowMap((prev) => ({
+                                      ...prev,
+                                      [selectedBrief.id]: updatedItem,
+                                    }));
+                                  } catch (err) {
+                                    console.error('Failed to update checklist item:', err);
+                                  }
                                 }}
                                 style={{
                                   marginTop: '0.15rem',

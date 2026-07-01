@@ -2,20 +2,16 @@
 
 ## Context & Repository State
 - **Current Branch**: `feature/project-site-selector`
-- **Latest Pushed Commit**: `c20a0c7 Persist selected project setting in Supabase`
+- **Latest Pushed Commit**: `5a3ac0f Persist opportunity workflow state in Supabase`
 - **Final Session Batch**:
-  - [ ] `app/action-plan/page.tsx`
-  - [ ] `app/competitive-intelligence/page.tsx`
-  - [ ] `app/content/page.tsx`
+  - [ ] `app/content-briefs/page.tsx`
   - [ ] `app/export/page.tsx`
-  - [ ] `app/health/page.tsx`
-  - [ ] `app/page.tsx`
   - [ ] `docs/CODING_HANDOFF.md`
   - [ ] `docs/PRODUCTION_BACKEND_PLAN.md`
-  - [ ] `lib/opportunity-workflow.ts`
-  - [ ] `supabase/migrations/20260701000002_opportunity_workflow.sql`
+  - [ ] `lib/content-brief-workflow.ts`
+  - [ ] `supabase/migrations/20260701000003_content_brief_workflow.sql`
   - [ ] `supabase/schema.sql`
-  - [ ] `test/opportunity-workflow.test.ts`
+  - [ ] `test/content-brief-workflow.test.ts`
 
 ## Major Completed Features
 - [x] **Project/Site Selector**: Added robust site/project selector support.
@@ -63,20 +59,16 @@ Before completing code batches, run:
 
 ### [2026-07-01]
 <!-- AUTO_SNAPSHOT_START -->
-#### Auto Snapshot (HEAD: c20a0c7)
+#### Auto Snapshot (HEAD: 5a3ac0f)
 - **Changed Files**:
-  - `app/action-plan/page.tsx`
-  - `app/competitive-intelligence/page.tsx`
-  - `app/content/page.tsx`
+  - `app/content-briefs/page.tsx`
   - `app/export/page.tsx`
-  - `app/health/page.tsx`
-  - `app/page.tsx`
   - `docs/CODING_HANDOFF.md`
   - `docs/PRODUCTION_BACKEND_PLAN.md`
-  - `lib/opportunity-workflow.ts`
-  - `supabase/migrations/20260701000002_opportunity_workflow.sql`
+  - `lib/content-brief-workflow.ts`
+  - `supabase/migrations/20260701000003_content_brief_workflow.sql`
   - `supabase/schema.sql`
-  - `test/opportunity-workflow.test.ts`
+  - `test/content-brief-workflow.test.ts`
 - **Validation Reminders**:
   - Run `npm run build` to verify types and Next.js compilation.
   - Run `git diff --check` to check for stray spaces and conflict markers.
@@ -179,3 +171,16 @@ Before completing code batches, run:
   - `docs/PRODUCTION_BACKEND_PLAN.md`
 - **Validation**: `npm test` passed 42 unit tests (including 4 new focused node tests for the summary helper); `npm run build` succeeds successfully.
 - **Notes**: Added a pure helper to calculate local-to-cloud data migration summaries. Added a preflight summary section to the Settings page showing counts, size, warnings, and local CSV mode notice. Implemented confirmation check logic, progress/result visual feedback, and graceful handling of zero-row migrations.
+
+### [2026-07-01] - Server-Side Content Brief Workflow State with localStorage Fallback (Phase 3)
+- **Files Touched**:
+  - `supabase/migrations/20260701000003_content_brief_workflow.sql`
+  - `supabase/schema.sql`
+  - `lib/content-brief-workflow.ts`
+  - `app/content-briefs/page.tsx`
+  - `app/export/page.tsx`
+  - `test/content-brief-workflow.test.ts`
+  - `docs/CODING_HANDOFF.md`
+  - `docs/PRODUCTION_BACKEND_PLAN.md`
+- **Validation**: `npm test` passed all 82 unit tests (including 8 new focused node tests for content brief workflow); `npm run build` completed successfully.
+- **Notes**: Created Supabase migration to create `public.content_brief_workflows` with check constraints, indexes, and user-scoped RLS policies. Updated `supabase/schema.sql`. Extended `lib/content-brief-workflow.ts` with sanitization, local fallback, cloud merging based on `updatedAt` timestamps, and async cloud helpers. Updated `app/content-briefs/page.tsx` to load merged workflow map and update workflow elements asynchronously. Updated `app/export/page.tsx` to load merged workflow map for exporting. Added Node tests in `test/content-brief-workflow.test.ts`.
