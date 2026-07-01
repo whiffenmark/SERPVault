@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
 const PAGES = [
   { path: '/', name: 'Dashboard' },
@@ -11,13 +11,23 @@ const PAGES = [
   { path: '/settings', name: 'Settings' },
 ];
 
+async function navigateToPath(page: Page, path: string) {
+  const shareUrl = process.env.VERCEL_SHARE_URL;
+  if (shareUrl) {
+    await page.goto(shareUrl);
+    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
+  }
+  await page.goto(path);
+  await page.waitForLoadState('domcontentloaded');
+}
+
 test.describe('Desktop Smoke Tests', () => {
   test.skip(({ isMobile }) => isMobile, 'Desktop only');
 
   for (const { path, name } of PAGES) {
     test(`renders ${name} page correctly`, async ({ page }) => {
-      await page.goto(path);
-      await page.waitForLoadState('domcontentloaded');
+      await navigateToPath(page, path);
 
       // Assert sidebar nav is visible
       const sidebarNav = page.locator('.sidebar-nav');
@@ -41,8 +51,7 @@ test.describe('Mobile Smoke Tests', () => {
 
   for (const { path, name } of PAGES) {
     test(`renders ${name} page correctly on mobile`, async ({ page }) => {
-      await page.goto(path);
-      await page.waitForLoadState('domcontentloaded');
+      await navigateToPath(page, path);
 
       // Assert the app renders SERPVault header
       const header = page.locator('.sidebar-header-bar');

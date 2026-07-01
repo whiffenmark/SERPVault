@@ -2,17 +2,11 @@
 
 ## Context & Repository State
 - **Current Branch**: `feature/project-site-selector`
-- **Latest Pushed Commit**: `d8582bb Add full data export bundle`
+- **Latest Pushed Commit**: `5742416 Add privacy deletion and upload audit trail`
 - **Final Session Batch**:
-  - [ ] `app/settings/page.tsx`
-  - [ ] `app/upload/page.tsx`
   - [ ] `docs/CODING_HANDOFF.md`
   - [ ] `docs/PRODUCTION_BACKEND_PLAN.md`
-  - [ ] `lib/db.ts`
-  - [ ] `lib/upload-audit.ts`
-  - [ ] `supabase/migrations/20260701000004_upload_audit_logs.sql`
-  - [ ] `supabase/schema.sql`
-  - [ ] `test/privacy-audit.test.ts`
+  - [ ] `tests/e2e/smoke.spec.ts`
 
 ## Major Completed Features
 - [x] **Project/Site Selector**: Added robust site/project selector support.
@@ -60,21 +54,23 @@ Before completing code batches, run:
 
 ### [2026-07-01]
 <!-- AUTO_SNAPSHOT_START -->
-#### Auto Snapshot (HEAD: d8582bb)
+#### Auto Snapshot (HEAD: 5742416)
 - **Changed Files**:
-  - `app/settings/page.tsx`
-  - `app/upload/page.tsx`
   - `docs/CODING_HANDOFF.md`
   - `docs/PRODUCTION_BACKEND_PLAN.md`
-  - `lib/db.ts`
-  - `lib/upload-audit.ts`
-  - `supabase/migrations/20260701000004_upload_audit_logs.sql`
-  - `supabase/schema.sql`
-  - `test/privacy-audit.test.ts`
+  - `tests/e2e/smoke.spec.ts`
 - **Validation Reminders**:
   - Run `npm run build` to verify types and Next.js compilation.
   - Run `git diff --check` to check for stray spaces and conflict markers.
 <!-- AUTO_SNAPSHOT_END -->
+
+### [2026-07-01] - QA Harness: Vercel Share URL Bypass Support
+- **Files Touched**:
+  - `tests/e2e/smoke.spec.ts`
+- **Validation**:
+  - Local validation: `npm test` and `git diff --check`
+  - Hosted e2e validation: `BASE_URL=<branch-alias> VERCEL_SHARE_URL=<share-url> npm run test:e2e` => 16 passed / 16 skipped. Note that the share URL expires July 2, 2026 at 6:00 PM.
+- **Notes**: Added support for the optional `VERCEL_SHARE_URL` environment variable in the Playwright smoke tests. Created a `navigateToPath` helper that checks if `VERCEL_SHARE_URL` is set, navigates to that share URL to establish the Vercel bypass cookie (waiting for domcontentloaded and networkidle), and then navigates to the relative page path. This avoids duplication in desktop and mobile tests and ensures local development remains unchanged.
 
 ### [2026-07-01] - Privacy and Governance Items (Phase 6)
 - **Files Touched**:
