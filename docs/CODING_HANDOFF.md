@@ -2,15 +2,18 @@
 
 ## Context & Repository State
 - **Current Branch**: `feature/project-site-selector`
-- **Latest Pushed Commit**: `a6ea4e1 Automate coding handoff updates`
+- **Latest Pushed Commit**: `c517fcb Add tests and fix mobile shell`
 - **Final Session Batch**:
-  - [ ] `app/globals.css`
-  - [ ] `app/layout.tsx`
-  - [ ] `components/Sidebar.tsx`
+  - [ ] `.gitignore`
   - [ ] `docs/CODING_HANDOFF.md`
+  - [ ] `docs/PRODUCTION_BACKEND_PLAN.md`
+  - [ ] `lib/detect-report-type.ts`
+  - [ ] `lib/map-rows.ts`
   - [ ] `package-lock.json`
   - [ ] `package.json`
-  - [ ] `test/serpvault.test.ts`
+  - [ ] `playwright.config.ts`
+  - [ ] `test/import-broadening.test.ts`
+  - [ ] `tests/e2e/smoke.spec.ts`
 
 ## Major Completed Features
 - [x] **Project/Site Selector**: Added robust site/project selector support.
@@ -58,15 +61,18 @@ Before completing code batches, run:
 
 ### [2026-07-01]
 <!-- AUTO_SNAPSHOT_START -->
-#### Auto Snapshot (HEAD: a6ea4e1)
+#### Auto Snapshot (HEAD: c517fcb)
 - **Changed Files**:
-  - `app/globals.css`
-  - `app/layout.tsx`
-  - `components/Sidebar.tsx`
+  - `.gitignore`
   - `docs/CODING_HANDOFF.md`
+  - `docs/PRODUCTION_BACKEND_PLAN.md`
+  - `lib/detect-report-type.ts`
+  - `lib/map-rows.ts`
   - `package-lock.json`
   - `package.json`
-  - `test/serpvault.test.ts`
+  - `playwright.config.ts`
+  - `test/import-broadening.test.ts`
+  - `tests/e2e/smoke.spec.ts`
 - **Validation Reminders**:
   - Run `npm run build` to verify types and Next.js compilation.
   - Run `git diff --check` to check for stray spaces and conflict markers.

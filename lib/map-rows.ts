@@ -242,7 +242,8 @@ export function mapBacklink(row: Record<string, string>, uploadId: string): Back
       'source url',      // SEMrush
       'from url',
       'referring url',
-      'referring page',  // Ahrefs
+      'referring page url', // Ahrefs URL exact match helper
+      'referring page',  // Ahrefs (title/url fallback)
       'source page',
       'source',
       'from',
@@ -256,6 +257,7 @@ export function mapBacklink(row: Record<string, string>, uploadId: string): Back
       'target page',
       'target',
       'to',
+      'link url',        // Ahrefs target url
     ),
     anchorText: col(row, 'anchor text', 'anchor and target', 'anchor'),
     domainAuthority: num(
