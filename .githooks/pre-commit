@@ -1,0 +1,10 @@
+#!/bin/sh
+
+# Run handoff update script
+npm run handoff:update
+
+# Stage docs/CODING_HANDOFF.md if it has unstaged changes
+if ! git diff --quiet -- docs/CODING_HANDOFF.md; then
+  echo "Staging auto-updated docs/CODING_HANDOFF.md..."
+  git add docs/CODING_HANDOFF.md
+fi

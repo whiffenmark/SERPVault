@@ -2,14 +2,12 @@
 
 ## Context & Repository State
 - **Current Branch**: `feature/project-site-selector`
-- **Latest Pushed Commit**: `77f249c Build production SEO workflows`
+- **Latest Pushed Commit**: `2164bd2 Add final handoff and harden types`
 - **Final Session Batch**:
-  - [ ] `app/content/page.tsx`
-  - [ ] `app/upload/page.tsx`
-  - [ ] `app/keywords/page.tsx`
-  - [ ] `app/settings/page.tsx`
-  - [ ] `lib/export.ts`
+  - [ ] `.githooks/pre-commit`
   - [ ] `docs/CODING_HANDOFF.md`
+  - [ ] `package.json`
+  - [ ] `scripts/update-handoff.mjs`
 
 ## Major Completed Features
 - [x] **Project/Site Selector**: Added robust site/project selector support.
@@ -50,12 +48,23 @@ Before completing code batches, run:
 - **Orchestration**: Codex Desktop orchestrates the workflow and delegates tool execution to `agy`.
 - **Commits**: Never commit or push without explicit user approval.
 - **Scope**: Avoid reverting or modifying unrelated files.
-- **Handoff Updates**: This handoff file should be updated by future agents after completing meaningful batches.
+- **Handoff Updates**: This handoff file is automatically updated via `npm run handoff:update` (run via a pre-commit hook after installing with `npm run handoff:install-hook`).
 
 ## Change Log
 *To update this file, append a dated entry here whenever you complete a meaningful batch of work. Include the commit hash, files touched, validation performed, and preview URL if available.*
 
 ### [2026-07-01]
+<!-- AUTO_SNAPSHOT_START -->
+#### Auto Snapshot (HEAD: 2164bd2)
+- **Changed Files**:
+  - `.githooks/pre-commit`
+  - `docs/CODING_HANDOFF.md`
+  - `package.json`
+  - `scripts/update-handoff.mjs`
+- **Validation Reminders**:
+  - Run `npm run build` to verify types and Next.js compilation.
+  - Run `git diff --check` to check for stray spaces and conflict markers.
+<!-- AUTO_SNAPSHOT_END -->
 - **Commit**: Final handoff/type-hardening commit; see latest git log on feature/project-site-selector after push
 - **Files Touched**:
   - `app/content/page.tsx`

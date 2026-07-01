@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "handoff:update": "node scripts/update-handoff.mjs",
+    "handoff:install-hook": "git config core.hooksPath .githooks"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.107.0",
