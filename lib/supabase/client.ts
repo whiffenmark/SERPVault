@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { isCloudRolloutEnabled } from './rollout';
 
 let _client: SupabaseClient | null = null;
 
@@ -8,6 +9,7 @@ export function getSupabase(): SupabaseClient | null {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !key) return null;
+  if (!isCloudRolloutEnabled()) return null;
   if (!_client) {
     _client = createClient(url, key);
   }
@@ -18,7 +20,9 @@ export function __setSupabaseClientForTesting(client: SupabaseClient | null) {
   _client = client;
 }
 
-export const supabaseEnabled = !!(
+export const supabaseConfigured = !!(
   process.env.NEXT_PUBLIC_SUPABASE_URL &&
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
+
+export const supabaseEnabled = supabaseConfigured && isCloudRolloutEnabled();

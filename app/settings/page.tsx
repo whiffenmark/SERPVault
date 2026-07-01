@@ -4,7 +4,17 @@ import { useState, useEffect } from 'react';
 import { clearStore, getStore } from '@/lib/storage';
 import type { AppStore } from '@/lib/types';
 import * as db from '@/lib/db';
-import { supabaseEnabled, getSupabase } from '@/lib/supabase/client';
+import { supabaseEnabled, getSupabase, supabaseConfigured } from '@/lib/supabase/client';
+import {
+  isCloudRolloutEnabled,
+  getCloudBetaOptIn,
+  setCloudBetaOptIn,
+  getCloudBetaOptOut,
+  setCloudBetaOptOut,
+  parseRolloutPercent,
+  getBrowserBucketId,
+  determineRollout
+} from '@/lib/supabase/rollout';
 import {
   signInWithEmail,
   signUpWithEmail,
@@ -78,6 +88,11 @@ export default function SettingsPage() {
   const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
   const [exportingAll, setExportingAll] = useState(false);
 
+  // Rollout states
+  const [optIn, setOptIn] = useState(false);
+  const [optOut, setOptOut] = useState(false);
+  const [rolloutEnabled, setRolloutEnabled] = useState(false);
+
   const loadCounts = () => {
     Promise.all([
       db.getUploads(),
@@ -110,6 +125,9 @@ export default function SettingsPage() {
 
   useEffect(() => {
     loadCounts();
+    setOptIn(getCloudBetaOptIn());
+    setOptOut(getCloudBetaOptOut());
+    setRolloutEnabled(isCloudRolloutEnabled());
   }, []);
 
   useEffect(() => {
@@ -126,6 +144,42 @@ export default function SettingsPage() {
       if (unsubscribe) unsubscribe();
     };
   }, []);
+
+  const handleToggleOptIn = () => {
+    const newVal = !optIn;
+    setCloudBetaOptIn(newVal);
+    setOptIn(newVal);
+    if (newVal) {
+      setOptOut(false);
+    }
+    const enabledNow = determineRollout(
+      getBrowserBucketId(),
+      parseRolloutPercent(process.env.NEXT_PUBLIC_SERPVAULT_CLOUD_ROLLOUT_PERCENT),
+      newVal,
+      newVal ? false : optOut
+    );
+    setRolloutEnabled(enabledNow);
+    loadCounts();
+    window.location.reload();
+  };
+
+  const handleToggleOptOut = () => {
+    const newVal = !optOut;
+    setCloudBetaOptOut(newVal);
+    setOptOut(newVal);
+    if (newVal) {
+      setOptIn(false);
+    }
+    const enabledNow = determineRollout(
+      getBrowserBucketId(),
+      parseRolloutPercent(process.env.NEXT_PUBLIC_SERPVAULT_CLOUD_ROLLOUT_PERCENT),
+      optIn,
+      newVal
+    );
+    setRolloutEnabled(enabledNow);
+    loadCounts();
+    window.location.reload();
+  };
 
   const storageSizeInBytes = (() => {
     try {
@@ -500,7 +554,11 @@ export default function SettingsPage() {
       )}
 
       <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
-        <Card title="Supabase Status" value={supabaseEnabled ? 'Connected' : 'Not configured'} accent={supabaseEnabled} />
+        <Card
+          title="Supabase Status"
+          value={supabaseEnabled ? 'Connected' : (supabaseConfigured ? 'Local Mode' : 'Not configured')}
+          accent={supabaseEnabled}
+        />
         <Card title="Local Cache" value={storageSize} />
         <Card title="Projects" value={counts.projects} />
         <Card title="Keywords" value={counts.keywords} />
@@ -563,16 +621,108 @@ export default function SettingsPage() {
         <div style={{ background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '1.5rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
             <h2 style={{ fontSize: '1rem', fontWeight: 600 }}>Supabase Connection</h2>
-            <span style={{ fontSize: '0.75rem', fontWeight: 600, padding: '0.2rem 0.6rem', borderRadius: '999px', background: supabaseEnabled ? '#10b98122' : '#ef444422', color: supabaseEnabled ? 'var(--success)' : 'var(--danger)' }}>
-              {supabaseEnabled ? '● Connected' : '○ Not configured'}
+            <span style={{
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              padding: '0.2rem 0.6rem',
+              borderRadius: '999px',
+              background: supabaseEnabled ? '#10b98122' : (supabaseConfigured ? '#f59e0b22' : '#ef444422'),
+              color: supabaseEnabled ? 'var(--success)' : (supabaseConfigured ? 'var(--warning)' : 'var(--danger)')
+            }}>
+              {supabaseEnabled ? '● Connected' : (supabaseConfigured ? '○ Local Mode' : '○ Not configured')}
             </span>
           </div>
 
-          {supabaseEnabled && (
-            <div style={{ fontSize: '0.82rem', color: 'var(--muted)', marginBottom: '1rem' }}>
-              Project: <code style={{ background: 'rgba(99,102,241,0.1)', padding: '0.1rem 0.3rem', borderRadius: '3px', fontSize: '0.78rem' }}>
-                {process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('https://', '').split('.')[0]}
-              </code>
+          {supabaseConfigured && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.25rem', fontSize: '0.82rem' }}>
+              <div>
+                Project: <code style={{ background: 'rgba(99,102,241,0.1)', padding: '0.1rem 0.3rem', borderRadius: '3px', fontSize: '0.78rem' }}>
+                  {process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('https://', '').split('.')[0]}
+                </code>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span>Rollout Status:</span>
+                <span style={{ fontWeight: 600, color: rolloutEnabled ? 'var(--success)' : 'var(--warning)' }}>
+                  {rolloutEnabled
+                    ? (optIn ? 'Enabled via beta opt-in' : `Enabled via rollout (${parseRolloutPercent(process.env.NEXT_PUBLIC_SERPVAULT_CLOUD_ROLLOUT_PERCENT)}%)`)
+                    : (optOut ? 'Disabled by local mode (opt-out)' : `Disabled by rollout/local mode (${parseRolloutPercent(process.env.NEXT_PUBLIC_SERPVAULT_CLOUD_ROLLOUT_PERCENT)}%)`)
+                  }
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
+                {!optIn ? (
+                  <button
+                    type="button"
+                    onClick={handleToggleOptIn}
+                    style={{
+                      background: 'rgba(16, 185, 129, 0.1)',
+                      border: '1px solid rgba(16, 185, 129, 0.3)',
+                      color: 'var(--success)',
+                      borderRadius: '5px',
+                      padding: '0.25rem 0.75rem',
+                      cursor: 'pointer',
+                      fontSize: '0.75rem',
+                      fontWeight: 600
+                    }}
+                  >
+                    Beta Opt-In
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleToggleOptIn}
+                    style={{
+                      background: 'var(--success)',
+                      border: 'none',
+                      color: '#fff',
+                      borderRadius: '5px',
+                      padding: '0.25rem 0.75rem',
+                      cursor: 'pointer',
+                      fontSize: '0.75rem',
+                      fontWeight: 600
+                    }}
+                  >
+                    ✓ Opted In
+                  </button>
+                )}
+
+                {!optOut ? (
+                  <button
+                    type="button"
+                    onClick={handleToggleOptOut}
+                    style={{
+                      background: 'rgba(239, 68, 68, 0.1)',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      color: 'var(--danger)',
+                      borderRadius: '5px',
+                      padding: '0.25rem 0.75rem',
+                      cursor: 'pointer',
+                      fontSize: '0.75rem',
+                      fontWeight: 600
+                    }}
+                  >
+                    Opt-Out (Local Mode)
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleToggleOptOut}
+                    style={{
+                      background: 'var(--danger)',
+                      border: 'none',
+                      color: '#fff',
+                      borderRadius: '5px',
+                      padding: '0.25rem 0.75rem',
+                      cursor: 'pointer',
+                      fontSize: '0.75rem',
+                      fontWeight: 600
+                    }}
+                  >
+                    ✓ Opted Out
+                  </button>
+                )}
+              </div>
             </div>
           )}
 

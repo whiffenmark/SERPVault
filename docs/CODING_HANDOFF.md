@@ -2,11 +2,14 @@
 
 ## Context & Repository State
 - **Current Branch**: `feature/project-site-selector`
-- **Latest Pushed Commit**: `5742416 Add privacy deletion and upload audit trail`
+- **Latest Pushed Commit**: `af23044 Add protected preview e2e harness`
 - **Final Session Batch**:
+  - [ ] `app/settings/page.tsx`
   - [ ] `docs/CODING_HANDOFF.md`
   - [ ] `docs/PRODUCTION_BACKEND_PLAN.md`
-  - [ ] `tests/e2e/smoke.spec.ts`
+  - [ ] `lib/supabase/client.ts`
+  - [ ] `lib/supabase/rollout.ts`
+  - [ ] `test/rollout.test.ts`
 
 ## Major Completed Features
 - [x] **Project/Site Selector**: Added robust site/project selector support.
@@ -54,15 +57,30 @@ Before completing code batches, run:
 
 ### [2026-07-01]
 <!-- AUTO_SNAPSHOT_START -->
-#### Auto Snapshot (HEAD: 5742416)
+#### Auto Snapshot (HEAD: af23044)
 - **Changed Files**:
+  - `app/settings/page.tsx`
   - `docs/CODING_HANDOFF.md`
   - `docs/PRODUCTION_BACKEND_PLAN.md`
-  - `tests/e2e/smoke.spec.ts`
+  - `lib/supabase/client.ts`
+  - `lib/supabase/rollout.ts`
+  - `test/rollout.test.ts`
 - **Validation Reminders**:
   - Run `npm run build` to verify types and Next.js compilation.
   - Run `git diff --check` to check for stray spaces and conflict markers.
 <!-- AUTO_SNAPSHOT_END -->
+
+### [2026-07-01] - Phase 7 Canary Rollout with Local Fallback
+- **Files Touched**:
+  - `lib/supabase/rollout.ts`
+  - `lib/supabase/client.ts`
+  - `app/settings/page.tsx`
+  - `test/rollout.test.ts`
+  - `docs/PRODUCTION_BACKEND_PLAN.md`
+- **Validation**:
+  - `npm test` successfully passed all unit tests (including 10 new rollout unit tests).
+  - `npm run build` successfully compiles.
+- **Notes**: Implemented Phase 7 Canary Rollout. Added rollout helper with stable browser bucket hashing, percentage parsing from environment variable `NEXT_PUBLIC_SERPVAULT_CLOUD_ROLLOUT_PERCENT`, and beta opt-in/opt-out localStorage keys. Gated Supabase client initialization in `getSupabase()` so that features fall back to localStorage cleanly when rollout is disabled or explicitly opted out. Updated Settings UI with rollout configuration status details and opt-in/opt-out action buttons that refresh page state. Created unit tests in `test/rollout.test.ts` verifying parsing, stable hashing/bucketing, precedence rules, and localStorage integration.
 
 ### [2026-07-01] - QA Harness: Vercel Share URL Bypass Support
 - **Files Touched**:
