@@ -32,9 +32,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
       </head>
-      <body style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--background)', color: 'var(--foreground)' }}>
+      <body className="app-layout">
         <Sidebar />
-        <main style={{ flex: 1, overflowY: 'auto', padding: '1.5rem' }}>
+        <main className="app-main">
           {children}
         </main>
       </body>

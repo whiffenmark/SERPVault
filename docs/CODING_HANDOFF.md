@@ -2,12 +2,15 @@
 
 ## Context & Repository State
 - **Current Branch**: `feature/project-site-selector`
-- **Latest Pushed Commit**: `2164bd2 Add final handoff and harden types`
+- **Latest Pushed Commit**: `a6ea4e1 Automate coding handoff updates`
 - **Final Session Batch**:
-  - [ ] `.githooks/pre-commit`
+  - [ ] `app/globals.css`
+  - [ ] `app/layout.tsx`
+  - [ ] `components/Sidebar.tsx`
   - [ ] `docs/CODING_HANDOFF.md`
+  - [ ] `package-lock.json`
   - [ ] `package.json`
-  - [ ] `scripts/update-handoff.mjs`
+  - [ ] `test/serpvault.test.ts`
 
 ## Major Completed Features
 - [x] **Project/Site Selector**: Added robust site/project selector support.
@@ -55,12 +58,15 @@ Before completing code batches, run:
 
 ### [2026-07-01]
 <!-- AUTO_SNAPSHOT_START -->
-#### Auto Snapshot (HEAD: 2164bd2)
+#### Auto Snapshot (HEAD: a6ea4e1)
 - **Changed Files**:
-  - `.githooks/pre-commit`
+  - `app/globals.css`
+  - `app/layout.tsx`
+  - `components/Sidebar.tsx`
   - `docs/CODING_HANDOFF.md`
+  - `package-lock.json`
   - `package.json`
-  - `scripts/update-handoff.mjs`
+  - `test/serpvault.test.ts`
 - **Validation Reminders**:
   - Run `npm run build` to verify types and Next.js compilation.
   - Run `git diff --check` to check for stray spaces and conflict markers.
