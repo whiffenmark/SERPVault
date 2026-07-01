@@ -13,6 +13,25 @@ import { getOpportunityWorkflowMap, saveOpportunityWorkflowMap, STATUS_COLORS, t
 
 type ContentRow = (KeywordRecord | KeywordGapRecord) & { _source: 'keyword' | 'gap' };
 
+interface HermesKeywordRow extends KeywordRecord {
+  _source: 'keyword';
+}
+
+interface HermesGroupMeta {
+  priority: string;
+  serpvault_tag: string;
+  intent: string;
+  domain: string;
+  location: string;
+  niche: string;
+  suggestedType: Tag | '-';
+}
+
+interface HermesPageTargetGroup {
+  meta: HermesGroupMeta;
+  keywords: HermesKeywordRow[];
+}
+
 export default function ContentPage() {
   const [rows, setRows] = useState<ContentRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -84,13 +103,16 @@ export default function ContentPage() {
   const tagCounts = Object.fromEntries(['Money Page', 'Blog Post', 'City Page', 'Link Bait', 'Ignore'].map((t) => [t, rows.filter((r) => r.tag === t).length]));
 
   // Hermes-style grouped content opportunities (Cluster → Page Target → Keywords)
-  const hermesKeywords = useMemo(() => (rows.filter((r) => r._source === 'keyword') as any[]).filter((k: any) => {
-    const r = k.raw || {};
-    return !!(r.cluster || r.Cluster || r['Cluster'] || r.page_target || r['page target'] || r.pageTarget);
-  }), [rows]);
+  const hermesKeywords = useMemo(() => {
+    const keywordRows = rows.filter((r): r is ContentRow & { _source: 'keyword' } => r._source === 'keyword');
+    return (keywordRows as HermesKeywordRow[]).filter((k) => {
+      const r = k.raw || {};
+      return !!(r.cluster || r.Cluster || r['Cluster'] || r.page_target || r['page target'] || r.pageTarget);
+    });
+  }, [rows]);
 
   const groupedContentOpps = useMemo(() => {
-    const clusterMap = new Map<string, Map<string, { meta: any; keywords: any[] }>>();
+    const clusterMap = new Map<string, Map<string, HermesPageTargetGroup>>();
     for (const row of hermesKeywords) {
       const r = row.raw || {};
       const cluster = r.cluster ?? r.Cluster ?? r['Cluster'] ?? 'Uncategorized';
@@ -295,7 +317,7 @@ export default function ContentPage() {
                             </div>
                             <div style={{ marginBottom: '0.35rem', fontWeight: 500 }}>Keywords:</div>
                             <ul style={{ margin: 0, paddingLeft: '1.1rem', lineHeight: 1.5 }}>
-                              {keywords.map((k: any) => (
+                              {keywords.map((k: HermesKeywordRow) => (
                                 <li key={k.id}>{k.keyword}{k.volume != null ? ` (${k.volume.toLocaleString()})` : ''}</li>
                               ))}
                             </ul>

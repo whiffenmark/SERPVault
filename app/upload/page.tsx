@@ -57,7 +57,7 @@ interface FileResult {
       present: boolean;
     }[];
     warnings: string[];
-    preview: any[];
+    preview: Record<string, unknown>[];
     confidence: string;
   };
 }
@@ -135,7 +135,7 @@ function computeHealthForFile(
     present: boolean;
   }[];
   warnings: string[];
-  preview: any[];
+  preview: Record<string, unknown>[];
   confidence: string;
 } | undefined {
   if (reportType === 'unknown' || rows.length === 0) return undefined;
@@ -219,19 +219,19 @@ function computeHealthForFile(
 
   const previewRows = rows.slice(0, 5);
   const preview = previewRows.map((r) => {
-    let mapped: any = {};
+    let mapped: Record<string, unknown> = {};
     if (reportType === 'keyword' || reportType === 'organic_positions') {
-      mapped = mapKeyword(r, 'preview');
+      mapped = mapKeyword(r, 'preview') as unknown as Record<string, unknown>;
     } else if (reportType === 'keyword_gap') {
-      mapped = mapKeywordGap(r, 'preview');
+      mapped = mapKeywordGap(r, 'preview') as unknown as Record<string, unknown>;
     } else if (reportType === 'competitor_pages') {
-      mapped = mapCompetitorPage(r, 'preview');
+      mapped = mapCompetitorPage(r, 'preview') as unknown as Record<string, unknown>;
     } else if (reportType === 'backlink') {
-      mapped = mapBacklink(r, 'preview');
+      mapped = mapBacklink(r, 'preview') as unknown as Record<string, unknown>;
     } else if (reportType === 'referring_domain') {
-      mapped = mapReferringDomain(r, 'preview');
+      mapped = mapReferringDomain(r, 'preview') as unknown as Record<string, unknown>;
     } else if (reportType === 'anchor_text') {
-      mapped = mapAnchorText(r, 'preview');
+      mapped = mapAnchorText(r, 'preview') as unknown as Record<string, unknown>;
     }
     const { id, uploadId, raw, ...rest } = mapped;
     return rest;

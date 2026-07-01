@@ -177,6 +177,20 @@ export function exportHermesContentPlanCSV(rows: KeywordRecord[], scopeSlug?: st
   download(toCSV(data), scopedFilename('hermes-content-plan', 'csv', scopeSlug));
 }
 
+interface HermesGroupMeta {
+  priority: string;
+  serpvault_tag: string;
+  intent: string;
+  domain: string;
+  location: string;
+  niche: string;
+}
+
+interface HermesPageTargetGroup {
+  meta: HermesGroupMeta;
+  keywords: KeywordRecord[];
+}
+
 export function exportHermesContentPlanMD(rows: KeywordRecord[], scopeLabel = 'All Projects', scopeSlug?: string): void {
   const hermesRows = rows.filter((k) => {
     const r = k.raw || {};
@@ -190,7 +204,7 @@ export function exportHermesContentPlanMD(rows: KeywordRecord[], scopeLabel = 'A
   }
 
   // Group by cluster -> page_target (mirrors keywords page groupedPlanner)
-  const clusterMap = new Map<string, Map<string, { meta: any; keywords: KeywordRecord[] }>>();
+  const clusterMap = new Map<string, Map<string, HermesPageTargetGroup>>();
   for (const row of hermesRows) {
     const r = row.raw || {};
     const cluster = getHermesField(r, 'cluster', 'Cluster', 'CLUSTER');

@@ -10,7 +10,7 @@ interface BackupFile {
   appName: string;
   schemaVersion: string;
   exportedAt: string;
-  data: Record<string, any>;
+  data: Record<string, unknown>;
 }
 
 const BACKUP_STORAGE_KEYS = [
@@ -163,7 +163,7 @@ export default function SettingsPage() {
 
   // Backup & Restore logic
   const handleExportBackup = () => {
-    const backupData: Record<string, any> = {};
+    const backupData: Record<string, unknown> = {};
     for (const key of BACKUP_STORAGE_KEYS) {
       const val = localStorage.getItem(key);
       if (val !== null) {

@@ -9,6 +9,20 @@ import ScoreBadge from '@/components/ScoreBadge';
 import Card from '@/components/Card';
 import type { Column } from '@/components/DataTable';
 
+interface HermesGroupMeta {
+  priority: string;
+  serpvault_tag: string;
+  intent: string;
+  domain: string;
+  location: string;
+  niche: string;
+}
+
+interface HermesPageTargetGroup {
+  meta: HermesGroupMeta;
+  keywords: KeywordRecord[];
+}
+
 export default function KeywordsPage() {
   const [keywords, setKeywords] = useState<KeywordRecord[]>([]);
   const [selectedSite, setSelectedSite] = useState<SiteSelection>(null);
@@ -50,7 +64,7 @@ export default function KeywordsPage() {
   });
 
   const groupedPlanner = useMemo(() => {
-    const clusterMap = new Map<string, Map<string, { meta: any; keywords: KeywordRecord[] }>>();
+    const clusterMap = new Map<string, Map<string, HermesPageTargetGroup>>();
     for (const row of hermesRows) {
       const r = row.raw || {};
       const cluster = r.cluster ?? r.Cluster ?? r['Cluster'] ?? 'Uncategorized';
