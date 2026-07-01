@@ -32,7 +32,8 @@ import {
   STATUS_COLORS,
   getOpportunityWorkflowMap,
   saveOpportunityWorkflowMap,
-  type OpportunityWorkflowStatus
+  type OpportunityWorkflowStatus,
+  getMergedOpportunityWorkflowMap
 } from '@/lib/opportunity-workflow';
 import { exportWorkflowActionPlanCSV, exportWorkflowActionPlanMD } from '@/lib/export';
 import {
@@ -90,6 +91,9 @@ export default function ActionPlanPage() {
 
     const map = getOpportunityWorkflowMap();
     setWorkflowMap(map);
+    getMergedOpportunityWorkflowMap().then((merged) => {
+      setWorkflowMap(merged);
+    });
 
     const meta = getActionPlanMetadataMap();
     setMetadataMap(meta);

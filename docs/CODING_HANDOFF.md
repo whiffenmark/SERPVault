@@ -2,18 +2,20 @@
 
 ## Context & Repository State
 - **Current Branch**: `feature/project-site-selector`
-- **Latest Pushed Commit**: `7851cca Add project conflict handling for cloud migration`
+- **Latest Pushed Commit**: `c20a0c7 Persist selected project setting in Supabase`
 - **Final Session Batch**:
-  - [ ] `app/upload/page.tsx`
-  - [ ] `components/ProjectSiteSelector.tsx`
+  - [ ] `app/action-plan/page.tsx`
+  - [ ] `app/competitive-intelligence/page.tsx`
+  - [ ] `app/content/page.tsx`
+  - [ ] `app/export/page.tsx`
+  - [ ] `app/health/page.tsx`
+  - [ ] `app/page.tsx`
   - [ ] `docs/CODING_HANDOFF.md`
   - [ ] `docs/PRODUCTION_BACKEND_PLAN.md`
-  - [ ] `lib/supabase/client.ts`
-  - [ ] `lib/supabase/user-settings.ts`
-  - [ ] `supabase/migrations/20260701000001_user_settings.sql`
+  - [ ] `lib/opportunity-workflow.ts`
+  - [ ] `supabase/migrations/20260701000002_opportunity_workflow.sql`
   - [ ] `supabase/schema.sql`
-  - [ ] `test/selected-project-settings.test.ts`
-  - [ ] `test/user-settings.test.ts`
+  - [ ] `test/opportunity-workflow.test.ts`
 
 ## Major Completed Features
 - [x] **Project/Site Selector**: Added robust site/project selector support.
@@ -61,22 +63,39 @@ Before completing code batches, run:
 
 ### [2026-07-01]
 <!-- AUTO_SNAPSHOT_START -->
-#### Auto Snapshot (HEAD: 7851cca)
+#### Auto Snapshot (HEAD: c20a0c7)
 - **Changed Files**:
-  - `app/upload/page.tsx`
-  - `components/ProjectSiteSelector.tsx`
+  - `app/action-plan/page.tsx`
+  - `app/competitive-intelligence/page.tsx`
+  - `app/content/page.tsx`
+  - `app/export/page.tsx`
+  - `app/health/page.tsx`
+  - `app/page.tsx`
   - `docs/CODING_HANDOFF.md`
   - `docs/PRODUCTION_BACKEND_PLAN.md`
-  - `lib/supabase/client.ts`
-  - `lib/supabase/user-settings.ts`
-  - `supabase/migrations/20260701000001_user_settings.sql`
+  - `lib/opportunity-workflow.ts`
+  - `supabase/migrations/20260701000002_opportunity_workflow.sql`
   - `supabase/schema.sql`
-  - `test/selected-project-settings.test.ts`
-  - `test/user-settings.test.ts`
+  - `test/opportunity-workflow.test.ts`
 - **Validation Reminders**:
   - Run `npm run build` to verify types and Next.js compilation.
   - Run `git diff --check` to check for stray spaces and conflict markers.
 <!-- AUTO_SNAPSHOT_END -->
+### [2026-07-01] - Opportunity Queues Server-Side with Local Fallback (Phase 3)
+- **Files Touched**:
+  - `supabase/migrations/20260701000002_opportunity_workflow.sql`
+  - `supabase/schema.sql`
+  - `lib/opportunity-workflow.ts`
+  - `app/page.tsx`
+  - `app/content/page.tsx`
+  - `app/health/page.tsx`
+  - `app/action-plan/page.tsx`
+  - `app/competitive-intelligence/page.tsx`
+  - `app/export/page.tsx`
+  - `test/opportunity-workflow.test.ts`
+- **Validation**: `npm test`, `npm run build`, and `git diff --check`
+- **Notes**: Added a new Supabase migration creating `public.opportunity_workflow_items` with RLS policies and indexes. Extended `lib/opportunity-workflow.ts` to keep local storage sync behavior but added client-safe async cloud helpers (`loadOpportunityWorkflowMap`, `saveOpportunityWorkflowMapToCloud`, `saveOpportunityWorkflowStatusToCloud`, `getMergedOpportunityWorkflowMap`). Updated main dashboard and workspace pages to load merged workflow maps asynchronously on mount. Added focused Node test suite for status validation, local fallback, and cloud integration.
+
 ### [2026-07-01] - Selected Project Persistence in Supabase (Phase 3)
 - **Files Touched**:
   - `supabase/migrations/20260701000001_user_settings.sql`

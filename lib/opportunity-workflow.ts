@@ -1,3 +1,6 @@
+import { getSupabase } from './supabase/client';
+import { getCurrentUserId } from './supabase/auth';
+
 export type OpportunityWorkflowStatus = 'New' | 'Planned' | 'In Progress' | 'Done' | 'Ignored';
 
 export const WORKFLOW_STATUSES: OpportunityWorkflowStatus[] = ['New', 'Planned', 'In Progress', 'Done', 'Ignored'];
@@ -51,8 +54,121 @@ export function saveOpportunityWorkflowMap(map: Record<string, OpportunityWorkfl
       }
     }
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitized));
+
+    // Fire-and-forget cloud save if signed in
+    saveOpportunityWorkflowMapToCloud(sanitized).catch((err) => {
+      console.error('Failed to save opportunity workflow map to cloud in fire-and-forget:', err);
+    });
   } catch (e) {
     console.error('Failed to save opportunity workflow to localStorage', e);
   }
 }
 
+export async function loadOpportunityWorkflowMap(): Promise<Record<string, OpportunityWorkflowStatus>> {
+  const sb = getSupabase();
+  if (!sb) return {};
+  try {
+    const userId = await getCurrentUserId();
+    if (!userId) return {};
+
+    const { data, error } = await sb
+      .from('opportunity_workflow_items')
+      .select('opportunity_id, status')
+      .eq('user_id', userId);
+
+    if (error) {
+      console.error('Failed to load opportunity workflow from cloud:', error);
+      return {};
+    }
+
+    const result: Record<string, OpportunityWorkflowStatus> = {};
+    for (const row of data || []) {
+      if (isOpportunityWorkflowStatus(row.status)) {
+        result[row.opportunity_id] = row.status;
+      }
+    }
+    return result;
+  } catch (e) {
+    console.error('Failed to load opportunity workflow from cloud:', e);
+    return {};
+  }
+}
+
+export async function saveOpportunityWorkflowMapToCloud(map: Record<string, OpportunityWorkflowStatus>): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  try {
+    const userId = await getCurrentUserId();
+    if (!userId) return;
+
+    const rows = Object.entries(map)
+      .filter(([_, status]) => isOpportunityWorkflowStatus(status))
+      .map(([id, status]) => ({
+        user_id: userId,
+        opportunity_id: id,
+        status,
+        updated_at: new Date().toISOString()
+      }));
+
+    if (rows.length === 0) return;
+
+    const { error } = await sb
+      .from('opportunity_workflow_items')
+      .upsert(rows, { onConflict: 'user_id,opportunity_id' });
+
+    if (error) {
+      console.error('Failed to save opportunity workflow to cloud:', error);
+    }
+  } catch (e) {
+    console.error('Failed to save opportunity workflow to cloud:', e);
+  }
+}
+
+export async function saveOpportunityWorkflowStatusToCloud(
+  id: string,
+  status: OpportunityWorkflowStatus,
+  metadata?: Record<string, unknown>
+): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  try {
+    const userId = await getCurrentUserId();
+    if (!userId) return;
+    if (!isOpportunityWorkflowStatus(status)) return;
+
+    const { error } = await sb
+      .from('opportunity_workflow_items')
+      .upsert({
+        user_id: userId,
+        opportunity_id: id,
+        status,
+        metadata: metadata ?? {},
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'user_id,opportunity_id' });
+
+    if (error) {
+      console.error('Failed to save opportunity workflow status to cloud:', error);
+    }
+  } catch (e) {
+    console.error('Failed to save opportunity workflow status to cloud:', e);
+  }
+}
+
+export async function getMergedOpportunityWorkflowMap(): Promise<Record<string, OpportunityWorkflowStatus>> {
+  const localMap = getOpportunityWorkflowMap();
+  const sb = getSupabase();
+  if (!sb) return localMap;
+  try {
+    const userId = await getCurrentUserId();
+    if (!userId) return localMap;
+
+    const cloudMap = await loadOpportunityWorkflowMap();
+    return {
+      ...localMap,
+      ...cloudMap
+    };
+  } catch (e) {
+    console.error('Error merging opportunity workflow maps:', e);
+    return localMap;
+  }
+}

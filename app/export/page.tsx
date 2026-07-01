@@ -35,7 +35,7 @@ import {
 import { buildOpportunityQueue } from '@/lib/opportunity-queue';
 import { calculateDataHealth } from '@/lib/data-health';
 import { convertHealthIssueToQueueItem } from '@/lib/health-action-items';
-import { getOpportunityWorkflowMap, type OpportunityWorkflowStatus } from '@/lib/opportunity-workflow';
+import { getOpportunityWorkflowMap, type OpportunityWorkflowStatus, getMergedOpportunityWorkflowMap } from '@/lib/opportunity-workflow';
 import { getActionPlanMetadataMap, type ActionPlanItemMetadata } from '@/lib/action-plan-metadata';
 import { buildContentBriefs } from '@/lib/content-briefs';
 import { getCompetitorDomainSummaries } from '@/lib/competitive-intelligence';
@@ -96,6 +96,9 @@ export default function ExportPage() {
 
     const wMap = getOpportunityWorkflowMap();
     setWorkflowMap(wMap);
+    getMergedOpportunityWorkflowMap().then((merged) => {
+      setWorkflowMap(merged);
+    });
 
     const mMap = getActionPlanMetadataMap();
     setMetadataMap(mMap);

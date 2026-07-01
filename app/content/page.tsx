@@ -9,7 +9,7 @@ import ScoreBadge from '@/components/ScoreBadge';
 import Card from '@/components/Card';
 import type { Column } from '@/components/DataTable';
 import { getKeywordGapOpportunityId } from '@/lib/opportunity-queue';
-import { getOpportunityWorkflowMap, saveOpportunityWorkflowMap, STATUS_COLORS, type OpportunityWorkflowStatus } from '@/lib/opportunity-workflow';
+import { getOpportunityWorkflowMap, saveOpportunityWorkflowMap, STATUS_COLORS, type OpportunityWorkflowStatus, getMergedOpportunityWorkflowMap } from '@/lib/opportunity-workflow';
 
 type ContentRow = (KeywordRecord | KeywordGapRecord) & { _source: 'keyword' | 'gap' };
 
@@ -59,6 +59,9 @@ export default function ContentPage() {
 
   useEffect(() => {
     setWorkflowMap(getOpportunityWorkflowMap());
+    getMergedOpportunityWorkflowMap().then((merged) => {
+      setWorkflowMap(merged);
+    });
     loadData();
 
     const unsubscribe = subscribeProjectScopeChange(() => {

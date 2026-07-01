@@ -164,3 +164,16 @@ create table if not exists user_settings (
 );
 
 alter table user_settings disable row level security;
+
+create table if not exists opportunity_workflow_items (
+  user_id uuid,
+  opportunity_id text,
+  status text check (status in ('New', 'Planned', 'In Progress', 'Done', 'Ignored')),
+  project_id text,
+  metadata jsonb default '{}',
+  created_at timestamptz default now(),
+  updated_at timestamptz,
+  primary key (user_id, opportunity_id)
+);
+
+alter table opportunity_workflow_items disable row level security;

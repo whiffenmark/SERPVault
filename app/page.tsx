@@ -15,7 +15,8 @@ import {
   WORKFLOW_STATUSES,
   STATUS_COLORS,
   getOpportunityWorkflowMap,
-  saveOpportunityWorkflowMap
+  saveOpportunityWorkflowMap,
+  getMergedOpportunityWorkflowMap
 } from '@/lib/opportunity-workflow';
 
 export default function DashboardPage() {
@@ -41,6 +42,9 @@ export default function DashboardPage() {
 
     const map = getOpportunityWorkflowMap();
     setWorkflowMap(map);
+    getMergedOpportunityWorkflowMap().then((merged) => {
+      setWorkflowMap(merged);
+    });
 
     Promise.all([
       db.getUploads(),

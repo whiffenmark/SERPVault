@@ -9,7 +9,7 @@ import { getCompetitorDomainSummaries, getDomainFromUrl } from '@/lib/competitiv
 import ScoreBadge from '@/components/ScoreBadge';
 import Card from '@/components/Card';
 import { getCompetitorPageOpportunityId, getKeywordGapOpportunityId } from '@/lib/opportunity-queue';
-import { getOpportunityWorkflowMap, saveOpportunityWorkflowMap, STATUS_COLORS, type OpportunityWorkflowStatus } from '@/lib/opportunity-workflow';
+import { getOpportunityWorkflowMap, saveOpportunityWorkflowMap, STATUS_COLORS, type OpportunityWorkflowStatus, getMergedOpportunityWorkflowMap } from '@/lib/opportunity-workflow';
 import {
   Globe,
   ExternalLink,
@@ -66,6 +66,9 @@ export default function CompetitiveIntelligencePage() {
     setSelectedSite(getSelectedSite());
     setSelectedProjectId(getSelectedProjectId());
     setWorkflowMap(getOpportunityWorkflowMap());
+    getMergedOpportunityWorkflowMap().then((merged) => {
+      setWorkflowMap(merged);
+    });
 
     Promise.all([
       db.getCompetitorPages(),

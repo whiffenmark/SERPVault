@@ -18,6 +18,7 @@ import {
   getOpportunityWorkflowMap,
   saveOpportunityWorkflowMap,
   type OpportunityWorkflowStatus,
+  getMergedOpportunityWorkflowMap,
 } from '@/lib/opportunity-workflow';
 import { getHealthIssueStableId } from '@/lib/health-action-items';
 import Card from '@/components/Card';
@@ -93,6 +94,9 @@ export default function DataHealthPage() {
       setSelectedProjectIdState(getSelectedProjectId());
       setSelectedProjectRecord(getSelectedProject());
       setWorkflowMap(getOpportunityWorkflowMap());
+      getMergedOpportunityWorkflowMap().then((merged) => {
+        setWorkflowMap(merged);
+      });
     } catch (err) {
       console.error('[Data Health] Error loading database reports:', err);
     } finally {
