@@ -18,6 +18,8 @@ import {
 import * as db from '@/lib/db';
 import type { ReportType, UploadRecord, DedupeReport, ProjectRecord } from '@/lib/types';
 import { getSelectedProjectId, getStore, setSelectedProjectId as setStorageSelectedProjectId, subscribeProjectScopeChange } from '@/lib/storage';
+import { getCurrentUserId } from '@/lib/supabase/auth';
+import { saveSelectedProjectSetting } from '@/lib/supabase/user-settings';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -352,8 +354,21 @@ export default function UploadPage() {
     return () => unsubscribe();
   }, []);
 
-  const handleSelectProject = (id: string | null) => {
+  const updateSelectedProjectId = (id: string | null) => {
     setStorageSelectedProjectId(id);
+    getCurrentUserId().then((userId) => {
+      if (userId) {
+        saveSelectedProjectSetting(id).catch((err) => {
+          console.error('[upload] Failed to save selected project setting to cloud:', err);
+        });
+      }
+    }).catch((err) => {
+      console.error('[upload] Failed to get user ID:', err);
+    });
+  };
+
+  const handleSelectProject = (id: string | null) => {
+    updateSelectedProjectId(id);
   };
 
   const handleCreateProject = async (e: React.FormEvent) => {
@@ -383,7 +398,7 @@ export default function UploadPage() {
       setNewNiche('');
 
       // Select the new project
-      setStorageSelectedProjectId(projectId);
+      updateSelectedProjectId(projectId);
     } catch (err) {
       console.error('Error creating project:', err);
     } finally {
@@ -577,7 +592,7 @@ export default function UploadPage() {
           <button
             type="button"
             onClick={() => {
-              setStorageSelectedProjectId(null);
+              updateSelectedProjectId(null);
             }}
             style={{
               background: 'none',

@@ -53,7 +53,7 @@ This document outlines the phased migration plan for transitioning SERPVault fro
 * Transition active user state and progress-tracking workflows out of `localStorage` to the database.
 
 ### Action Items
-- [ ] **Selected Project Persistence**: Store the active project selection in a `user_settings` table (key-value or JSON column) linked to the user profile instead of using `serpvault_selected_project_id` in `localStorage`.
+- [x] **Selected Project Persistence**: Store the active project selection in a `user_settings` table (key-value or JSON column) linked to the user profile instead of using `serpvault_selected_project_id` in `localStorage`.
 - [ ] **Opportunity Queues Server-Side**: Move opportunity queue status and scoring metadata to database tables.
 - [ ] **Content Brief Workflow State**: Define tables for `content_brief_workflows` storing brief phase, outline, and target keywords, allowing users to collaborate on briefs across devices.
 

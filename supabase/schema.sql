@@ -153,3 +153,14 @@ alter table backlinks disable row level security;
 alter table referring_domains disable row level security;
 alter table anchor_texts disable row level security;
 alter table dedupe_reports disable row level security;
+
+create table if not exists user_settings (
+  user_id uuid,
+  key text,
+  value jsonb,
+  created_at timestamptz default now(),
+  updated_at timestamptz,
+  primary key (user_id, key)
+);
+
+alter table user_settings disable row level security;

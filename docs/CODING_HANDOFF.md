@@ -2,14 +2,18 @@
 
 ## Context & Repository State
 - **Current Branch**: `feature/project-site-selector`
-- **Latest Pushed Commit**: `670da52 Add guarded cloud migration preflight`
+- **Latest Pushed Commit**: `7851cca Add project conflict handling for cloud migration`
 - **Final Session Batch**:
-  - [ ] `app/settings/page.tsx`
+  - [ ] `app/upload/page.tsx`
+  - [ ] `components/ProjectSiteSelector.tsx`
   - [ ] `docs/CODING_HANDOFF.md`
   - [ ] `docs/PRODUCTION_BACKEND_PLAN.md`
-  - [ ] `lib/db.ts`
-  - [ ] `lib/project-conflicts.ts`
-  - [ ] `test/project-conflicts.test.ts`
+  - [ ] `lib/supabase/client.ts`
+  - [ ] `lib/supabase/user-settings.ts`
+  - [ ] `supabase/migrations/20260701000001_user_settings.sql`
+  - [ ] `supabase/schema.sql`
+  - [ ] `test/selected-project-settings.test.ts`
+  - [ ] `test/user-settings.test.ts`
 
 ## Major Completed Features
 - [x] **Project/Site Selector**: Added robust site/project selector support.
@@ -57,18 +61,60 @@ Before completing code batches, run:
 
 ### [2026-07-01]
 <!-- AUTO_SNAPSHOT_START -->
-#### Auto Snapshot (HEAD: 670da52)
+#### Auto Snapshot (HEAD: 7851cca)
 - **Changed Files**:
-  - `app/settings/page.tsx`
+  - `app/upload/page.tsx`
+  - `components/ProjectSiteSelector.tsx`
   - `docs/CODING_HANDOFF.md`
   - `docs/PRODUCTION_BACKEND_PLAN.md`
-  - `lib/db.ts`
-  - `lib/project-conflicts.ts`
-  - `test/project-conflicts.test.ts`
+  - `lib/supabase/client.ts`
+  - `lib/supabase/user-settings.ts`
+  - `supabase/migrations/20260701000001_user_settings.sql`
+  - `supabase/schema.sql`
+  - `test/selected-project-settings.test.ts`
+  - `test/user-settings.test.ts`
 - **Validation Reminders**:
   - Run `npm run build` to verify types and Next.js compilation.
   - Run `git diff --check` to check for stray spaces and conflict markers.
 <!-- AUTO_SNAPSHOT_END -->
+### [2026-07-01] - Selected Project Persistence in Supabase (Phase 3)
+- **Files Touched**:
+  - `supabase/migrations/20260701000001_user_settings.sql`
+  - `supabase/schema.sql`
+  - `lib/supabase/user-settings.ts`
+  - `components/ProjectSiteSelector.tsx`
+  - `test/user-settings.test.ts`
+  - `docs/CODING_HANDOFF.md`
+  - `docs/PRODUCTION_BACKEND_PLAN.md`
+- **Validation**: `npm test`, `npm run build`, and `git diff --check`
+- **Notes**: Developed `user_settings` table migration and schema definition. Created `lib/supabase/user-settings.ts` to manage setting storage and retrieval with graceful client-safe fallback for local mode. Connected `ProjectSiteSelector` component to sync selected project state to cloud and hydrate on mount and auth transitions. Added unit tests for helper fallback behaviors.
+
+### [2026-07-01] - Tighten Selected Project Persistence
+<!-- AUTO_SNAPSHOT_START -->
+#### Auto Snapshot (HEAD: 7851cca)
+- **Changed Files**:
+  - `app/upload/page.tsx`
+  - `components/ProjectSiteSelector.tsx`
+  - `docs/CODING_HANDOFF.md`
+  - `docs/PRODUCTION_BACKEND_PLAN.md`
+  - `lib/supabase/client.ts`
+  - `lib/supabase/user-settings.ts`
+  - `supabase/migrations/20260701000001_user_settings.sql`
+  - `supabase/schema.sql`
+  - `test/selected-project-settings.test.ts`
+  - `test/user-settings.test.ts`
+- **Validation Reminders**:
+  - Run `npm run build` to verify types and Next.js compilation.
+  - Run `git diff --check` to check for stray spaces and conflict markers.
+<!-- AUTO_SNAPSHOT_END -->
+- **Files Touched**:
+  - `lib/supabase/client.ts`
+  - `lib/supabase/user-settings.ts`
+  - `components/ProjectSiteSelector.tsx`
+  - `app/upload/page.tsx`
+  - `test/selected-project-settings.test.ts`
+- **Validation**: `npm test`, `npm run build`, and `git diff --check`
+- **Notes**: Tightened project persistence batch: typed `getUserSetting` to avoid `any` in public return type, defined `SELECTED_PROJECT_SETTING_KEY`, and added `saveSelectedProjectSetting`/`getSelectedProjectSetting` wrappers (validating string|null values and treating invalid values as absent). Updated `ProjectSiteSelector` component to call wrappers instead of raw helpers. Updated `app/upload/page.tsx` with a clean local async helper to persist cloud selected project setting asynchronously when signed in. Added comprehensive tests in `test/selected-project-settings.test.ts` using client testing hook `__setSupabaseClientForTesting`.
 ### [2026-07-01] - Project Conflict Resolution for Local-to-Cloud Migration
 <!-- AUTO_SNAPSHOT_START -->
 #### Auto Snapshot (HEAD: 670da52)

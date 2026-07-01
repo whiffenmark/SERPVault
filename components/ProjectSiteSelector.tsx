@@ -5,6 +5,8 @@ import { getSelectedProjectId, setSelectedProjectId, subscribeProjectScopeChange
 import { saveProject, deleteProject, getProjects, getUploads, getCompetitors } from '@/lib/db';
 import type { ProjectRecord, CompetitorRecord, UploadRecord } from '@/lib/types';
 import { nanoid } from '@/lib/nanoid';
+import { subscribeAuthState } from '@/lib/supabase/auth';
+import { getSelectedProjectSetting, saveSelectedProjectSetting } from '@/lib/supabase/user-settings';
 
 export default function ProjectSiteSelector() {
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
@@ -36,27 +38,96 @@ export default function ProjectSiteSelector() {
       setProjects(projs);
       setUploads(ups);
       setCompetitors(comps);
+      return projs;
     } catch (err) {
       console.error('Error refreshing data:', err);
+      return [];
     }
   };
 
   useEffect(() => {
-    async function load() {
-      await refreshData();
-      setSelectedId(getSelectedProjectId());
-    }
-    load();
+    let active = true;
 
-    const unsubscribe = subscribeProjectScopeChange((projectId) => {
+    async function load(userId: string | null) {
+      const loadedProjects = await refreshData();
+      if (!active) return;
+
+      const localId = getSelectedProjectId();
+
+      if (userId) {
+        // Hydrate from cloud if present
+        const cloudSelectedId = await getSelectedProjectSetting();
+        if (!active) return;
+
+        if (cloudSelectedId !== undefined) {
+          if (cloudSelectedId === null) {
+            setSelectedProjectId(null);
+            setSelectedId(null);
+          } else {
+            const exists = loadedProjects.some((p) => p.id === cloudSelectedId);
+            if (exists) {
+              setSelectedProjectId(cloudSelectedId);
+              setSelectedId(cloudSelectedId);
+            } else {
+              // Cloud ID is invalid (e.g. project deleted but setting not updated yet)
+              if (localId && loadedProjects.some((p) => p.id === localId)) {
+                setSelectedProjectId(localId);
+                setSelectedId(localId);
+              } else {
+                setSelectedProjectId(null);
+                setSelectedId(null);
+              }
+            }
+          }
+        } else {
+          // Setting not present in cloud: keep local selection if it maps to a current project, else null
+          if (localId && loadedProjects.some((p) => p.id === localId)) {
+            setSelectedProjectId(localId);
+            setSelectedId(localId);
+          } else {
+            setSelectedProjectId(null);
+            setSelectedId(null);
+          }
+        }
+      } else {
+        // Local-only user: keep local selection if it maps to a current project, else null
+        if (localId && loadedProjects.some((p) => p.id === localId)) {
+          setSelectedProjectId(localId);
+          setSelectedId(localId);
+        } else {
+          setSelectedProjectId(null);
+          setSelectedId(null);
+        }
+      }
+    }
+
+    const unsubscribeProject = subscribeProjectScopeChange((projectId) => {
       setSelectedId(projectId);
     });
-    return () => unsubscribe();
+
+    const unsubscribeAuth = subscribeAuthState((session) => {
+      if (session?.user?.id) {
+        load(session.user.id);
+      } else {
+        load(null);
+      }
+    });
+
+    if (!unsubscribeAuth) {
+      load(null);
+    }
+
+    return () => {
+      active = false;
+      unsubscribeProject();
+      if (unsubscribeAuth) unsubscribeAuth();
+    };
   }, []);
 
   const handleSelectProject = (id: string | null) => {
     setSelectedProjectId(id);
     setSelectedId(id);
+    saveSelectedProjectSetting(id);
   };
 
   const handleCreateProject = async (e: React.FormEvent) => {
