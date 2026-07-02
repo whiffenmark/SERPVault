@@ -40,6 +40,24 @@ export async function signUpWithEmail(email: string, password: string) {
   return data;
 }
 
+export async function signInWithGitHub() {
+  const sb = getSupabase();
+  if (!sb) throw new Error('Supabase is not configured');
+
+  const redirectTo = typeof window !== 'undefined'
+    ? window.location.origin + '/settings'
+    : undefined;
+
+  const { data, error } = await sb.auth.signInWithOAuth({
+    provider: 'github',
+    options: {
+      redirectTo,
+    },
+  });
+  if (error) throw error;
+  return data;
+}
+
 export async function signOut(): Promise<void> {
   const sb = getSupabase();
   if (!sb) return;

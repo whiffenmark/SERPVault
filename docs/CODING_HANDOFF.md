@@ -2,10 +2,12 @@
 
 ## Context & Repository State
 - **Current Branch**: `feature/project-site-selector`
-- **Latest Pushed Commit**: `2c3d3c3 Add cloud sync canary rollout`
+- **Latest Pushed Commit**: `99fb71a Fix sidebar nav scrolling`
 - **Final Session Batch**:
-  - [ ] `app/globals.css`
+  - [ ] `app/settings/page.tsx`
   - [ ] `docs/CODING_HANDOFF.md`
+  - [ ] `lib/supabase/auth.ts`
+  - [ ] `test/auth.test.ts`
 
 ## Major Completed Features
 - [x] **Project/Site Selector**: Added robust site/project selector support.
@@ -53,10 +55,12 @@ Before completing code batches, run:
 
 ### [2026-07-02]
 <!-- AUTO_SNAPSHOT_START -->
-#### Auto Snapshot (HEAD: 2c3d3c3)
+#### Auto Snapshot (HEAD: 99fb71a)
 - **Changed Files**:
-  - `app/globals.css`
+  - `app/settings/page.tsx`
   - `docs/CODING_HANDOFF.md`
+  - `lib/supabase/auth.ts`
+  - `test/auth.test.ts`
 - **Validation Reminders**:
   - Run `npm run build` to verify types and Next.js compilation.
   - Run `git diff --check` to check for stray spaces and conflict markers.

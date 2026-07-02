@@ -5,6 +5,7 @@ import {
   getCurrentUserId,
   signInWithEmail,
   signUpWithEmail,
+  signInWithGitHub,
   signOut,
   subscribeAuthState,
   isAuthAvailable
@@ -38,6 +39,15 @@ describe('Auth Helpers Unit Tests (Supabase Disconnected)', () => {
     await assert.rejects(
       async () => {
         await signUpWithEmail('test@example.com', 'password123');
+      },
+      /Supabase is not configured/
+    );
+  });
+
+  test('signInWithGitHub throws configuration error', async () => {
+    await assert.rejects(
+      async () => {
+        await signInWithGitHub();
       },
       /Supabase is not configured/
     );

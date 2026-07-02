@@ -16,8 +16,7 @@ import {
   determineRollout
 } from '@/lib/supabase/rollout';
 import {
-  signInWithEmail,
-  signUpWithEmail,
+  signInWithGitHub,
   signOut,
   subscribeAuthState,
   isAuthAvailable,
@@ -51,8 +50,6 @@ const BACKUP_STORAGE_KEYS = [
 
 export default function SettingsPage() {
   const [session, setSession] = useState<Session | null>(null);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
@@ -305,37 +302,12 @@ export default function SettingsPage() {
     }
   }
 
-  async function handleSignIn() {
-    if (!email || !password) {
-      setAuthError('Please enter both email and password.');
-      return;
-    }
+  async function handleSignInWithGitHub() {
     setAuthLoading(true);
     setAuthError(null);
     try {
-      await signInWithEmail(email, password);
-      flash('Signed in successfully.', 'success');
-      setEmail('');
-      setPassword('');
-    } catch (err) {
-      setAuthError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setAuthLoading(false);
-    }
-  }
-
-  async function handleSignUp() {
-    if (!email || !password) {
-      setAuthError('Please enter both email and password.');
-      return;
-    }
-    setAuthLoading(true);
-    setAuthError(null);
-    try {
-      await signUpWithEmail(email, password);
-      flash('Signed up successfully. Check your email for confirmation.', 'success');
-      setEmail('');
-      setPassword('');
+      await signInWithGitHub();
+      flash('Redirecting to GitHub...', 'info');
     } catch (err) {
       setAuthError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -932,47 +904,21 @@ export default function SettingsPage() {
               ) : (
                 <div>
                   <p style={{ fontSize: '0.82rem', color: 'var(--muted)', marginBottom: '1rem' }}>
-                    Local mode remains available. Sign in to sync data to the production database.
+                    Local mode remains available. Sign in with GitHub to sync data to the production database.
                   </p>
                   {authError && (
                     <div style={{ color: 'var(--danger)', fontSize: '0.78rem', marginBottom: '0.75rem' }}>
                       {authError}
                     </div>
                   )}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxWidth: '320px', marginBottom: '1rem' }}>
-                    <input
-                      type="email"
-                      placeholder="Email Address"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      style={{ background: 'var(--card-input, rgba(255,255,255,0.03))', border: '1px solid var(--card-border)', borderRadius: '6px', padding: '0.4rem 0.75rem', color: 'var(--foreground)', fontSize: '0.85rem' }}
-                    />
-                    <input
-                      type="password"
-                      placeholder="Password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      style={{ background: 'var(--card-input, rgba(255,255,255,0.03))', border: '1px solid var(--card-border)', borderRadius: '6px', padding: '0.4rem 0.75rem', color: 'var(--foreground)', fontSize: '0.85rem' }}
-                    />
-                  </div>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button
-                      type="button"
-                      onClick={handleSignIn}
-                      disabled={authLoading}
-                      style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: '7px', padding: '0.45rem 1.1rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem', opacity: authLoading ? 0.6 : 1 }}
-                    >
-                      {authLoading ? 'Loading...' : 'Sign In'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleSignUp}
-                      disabled={authLoading}
-                      style={{ background: 'transparent', border: '1px solid var(--accent)', color: 'var(--accent)', borderRadius: '7px', padding: '0.45rem 1.1rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem', opacity: authLoading ? 0.6 : 1 }}
-                    >
-                      Sign Up
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSignInWithGitHub}
+                    disabled={authLoading}
+                    style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: '7px', padding: '0.5rem 1.25rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', opacity: authLoading ? 0.6 : 1 }}
+                  >
+                    {authLoading ? 'Connecting...' : 'Continue with GitHub'}
+                  </button>
                 </div>
               )}
             </div>
