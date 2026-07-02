@@ -2,14 +2,10 @@
 
 ## Context & Repository State
 - **Current Branch**: `feature/project-site-selector`
-- **Latest Pushed Commit**: `af23044 Add protected preview e2e harness`
+- **Latest Pushed Commit**: `2c3d3c3 Add cloud sync canary rollout`
 - **Final Session Batch**:
-  - [ ] `app/settings/page.tsx`
+  - [ ] `app/globals.css`
   - [ ] `docs/CODING_HANDOFF.md`
-  - [ ] `docs/PRODUCTION_BACKEND_PLAN.md`
-  - [ ] `lib/supabase/client.ts`
-  - [ ] `lib/supabase/rollout.ts`
-  - [ ] `test/rollout.test.ts`
 
 ## Major Completed Features
 - [x] **Project/Site Selector**: Added robust site/project selector support.
@@ -55,6 +51,16 @@ Before completing code batches, run:
 ## Change Log
 *To update this file, append a dated entry here whenever you complete a meaningful batch of work. Include the commit hash, files touched, validation performed, and preview URL if available.*
 
+### [2026-07-02]
+<!-- AUTO_SNAPSHOT_START -->
+#### Auto Snapshot (HEAD: 2c3d3c3)
+- **Changed Files**:
+  - `app/globals.css`
+  - `docs/CODING_HANDOFF.md`
+- **Validation Reminders**:
+  - Run `npm run build` to verify types and Next.js compilation.
+  - Run `git diff --check` to check for stray spaces and conflict markers.
+<!-- AUTO_SNAPSHOT_END -->
 ### [2026-07-01]
 <!-- AUTO_SNAPSHOT_START -->
 #### Auto Snapshot (HEAD: af23044)

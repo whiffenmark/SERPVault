@@ -190,7 +190,8 @@ body {
     flex: 1 1 auto;
     border-top: none;
     max-height: none;
-    overflow-y: initial;
+    overflow-y: hidden;
+    min-height: 0;
     box-shadow: none;
   }
 }
@@ -207,5 +208,6 @@ body {
 @media (min-width: 720px) {
   .sidebar-nav {
     overflow-y: auto;
+    padding-bottom: 2rem;
   }
 }
