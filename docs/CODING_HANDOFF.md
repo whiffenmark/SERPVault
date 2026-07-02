@@ -2,11 +2,9 @@
 
 ## Context & Repository State
 - **Current Branch**: `feature/project-site-selector`
-- **Latest Pushed Commit**: `99fb71a Fix sidebar nav scrolling`
+- **Latest Pushed Commit**: `8644d28 Add GitHub OAuth sign-in`
 - **Final Session Batch**:
-  - [ ] `app/settings/page.tsx`
   - [ ] `docs/CODING_HANDOFF.md`
-  - [ ] `lib/supabase/auth.ts`
   - [ ] `test/auth.test.ts`
 
 ## Major Completed Features
@@ -55,16 +53,19 @@ Before completing code batches, run:
 
 ### [2026-07-02]
 <!-- AUTO_SNAPSHOT_START -->
-#### Auto Snapshot (HEAD: 99fb71a)
+#### Auto Snapshot (HEAD: 8644d28)
 - **Changed Files**:
-  - `app/settings/page.tsx`
   - `docs/CODING_HANDOFF.md`
-  - `lib/supabase/auth.ts`
   - `test/auth.test.ts`
 - **Validation Reminders**:
   - Run `npm run build` to verify types and Next.js compilation.
   - Run `git diff --check` to check for stray spaces and conflict markers.
 <!-- AUTO_SNAPSHOT_END -->
+- **Files Touched**:
+  - `test/auth.test.ts`
+- **Validation**:
+  - `npm test` successfully passed all 113 unit tests.
+- **Notes**: Added connected-client unit test coverage for `signInWithGitHub` in `lib/supabase/auth.ts` to verify OAuth parameter passing, error propagation, and window fallback handling.
 ### [2026-07-01]
 <!-- AUTO_SNAPSHOT_START -->
 #### Auto Snapshot (HEAD: af23044)
