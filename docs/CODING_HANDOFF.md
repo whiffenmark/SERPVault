@@ -2,10 +2,9 @@
 
 ## Context & Repository State
 - **Current Branch**: `feature/project-site-selector`
-- **Latest Pushed Commit**: `8644d28 Add GitHub OAuth sign-in`
+- **Latest Pushed Commit**: `0ec3922 Add GitHub OAuth auth tests`
 - **Final Session Batch**:
   - [ ] `docs/CODING_HANDOFF.md`
-  - [ ] `test/auth.test.ts`
 
 ## Major Completed Features
 - [x] **Project/Site Selector**: Added robust site/project selector support.
@@ -37,10 +36,7 @@ Before completing code batches, run:
 
 ## Next Steps / Future Work
 - [ ] **Verify Vercel Preview**: Check preview deployment once the local branch is pushed.
-- [ ] **Automated Tests**: Write Jest/Cypress tests for keyword import, duplicate checking, and site selector scoping.
-- [ ] **Auth / Multi-user**: Add full multi-user authentication persistence support.
-- [ ] **Visual QA**: Fix and polish responsive styling layouts on mobile devices.
-- [ ] **Competitor Projects Rules**: Ensure competitor domains from the Competitor Top Pages workspace are not forced to become project domains.
+- [ ] **Local Integration Testing**: Run local Supabase CLI containers to execute unit and security tests against RLS policies (currently blocked by Docker socket permission limits in development shell).
 
 ## Agent Guidelines / Coding Rules
 - **Orchestration**: Codex Desktop orchestrates the workflow and delegates tool execution to `agy`.
@@ -53,10 +49,9 @@ Before completing code batches, run:
 
 ### [2026-07-02]
 <!-- AUTO_SNAPSHOT_START -->
-#### Auto Snapshot (HEAD: 8644d28)
+#### Auto Snapshot (HEAD: 0ec3922)
 - **Changed Files**:
   - `docs/CODING_HANDOFF.md`
-  - `test/auth.test.ts`
 - **Validation Reminders**:
   - Run `npm run build` to verify types and Next.js compilation.
   - Run `git diff --check` to check for stray spaces and conflict markers.
